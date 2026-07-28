@@ -13,8 +13,10 @@
     packages: [],
     clientsPage: 1,
     clientEditingId: null,
+    clientDraft: { name: '', phone: '', address: '', zone: '' },
     messengerEditingId: null,
     messengerZonesDraft: [],
+    messengerDraft: { name: '', phone: '' },
     pkgEditingId: null,
     pkgSelectedClientId: null,
     pkgDraft: { tracking: '', weight: '', cost: '' },
@@ -238,7 +240,7 @@
   // ── CLIENTES ─────────────────────────────────────────────────────────────
   function renderClientes() {
     const editing = state.clientEditingId ? clientById(state.clientEditingId) : null;
-    const f = editing || { name: '', phone: '', address: '', zone: '' };
+    const f = state.clientDraft;
 
     const sorted = [...state.clients].sort((a, b) => a.name.localeCompare(b.name, 'es'));
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
@@ -520,7 +522,7 @@
   // ── MENSAJEROS ───────────────────────────────────────────────────────────
   function renderMensajeros() {
     const editing = state.messengerEditingId ? state.messengers.find((m) => m.id === state.messengerEditingId) : null;
-    const f = editing || { name: '', phone: '' };
+    const f = state.messengerDraft;
     const zonesDraft = state.messengerZonesDraft;
 
     const chips = PROVINCIAS.map((p) => {
@@ -582,9 +584,9 @@
   // ── actions ──────────────────────────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
-    if (tab === 'clientes') state.clientEditingId = null;
+    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', zone: '' }; }
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '' }; }
-    if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; }
+    if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '' }; }
     render();
     if (tab === 'paquete') renderWaitingList();
   }
@@ -603,6 +605,7 @@
       }
       await reloadClients();
       state.clientEditingId = null;
+      state.clientDraft = { name: '', phone: '', address: '', zone: '' };
       render();
     });
   }
@@ -670,6 +673,7 @@
       await reloadMessengers();
       state.messengerEditingId = null;
       state.messengerZonesDraft = [];
+      state.messengerDraft = { name: '', phone: '' };
       render();
     });
   }
@@ -695,10 +699,17 @@
       case 'logout': return void doLogout();
       case 'set-tab': return setTab(el.dataset.tab);
 
-      case 'edit-client':
-        state.clientEditingId = el.dataset.id; render(); return;
+      case 'edit-client': {
+        const c = clientById(el.dataset.id);
+        if (!c) return;
+        state.clientEditingId = c.id;
+        state.clientDraft = { name: c.name, phone: c.phone, address: c.address, zone: c.zone };
+        render(); return;
+      }
       case 'cancel-edit-client':
-        state.clientEditingId = null; render(); return;
+        state.clientEditingId = null;
+        state.clientDraft = { name: '', phone: '', address: '', zone: '' };
+        render(); return;
       case 'save-client': return void saveClient();
       case 'delete-client': return void deleteClient(el.dataset.id);
       case 'clients-page': {
@@ -737,10 +748,13 @@
         const m = state.messengers.find((x) => x.id === el.dataset.id);
         if (!m) return;
         state.messengerEditingId = m.id; state.messengerZonesDraft = [...m.zones];
+        state.messengerDraft = { name: m.name, phone: m.phone };
         render(); return;
       }
       case 'cancel-edit-messenger':
-        state.messengerEditingId = null; state.messengerZonesDraft = []; render(); return;
+        state.messengerEditingId = null; state.messengerZonesDraft = [];
+        state.messengerDraft = { name: '', phone: '' };
+        render(); return;
       case 'save-messenger': return void saveMessenger();
       case 'delete-messenger': return void deleteMessenger(el.dataset.id);
       case 'toggle-zone': {
@@ -776,6 +790,16 @@
       renderWaitingList();
       return;
     }
+    if (id === 'client-name') { state.clientDraft.name = e.target.value; return; }
+    if (id === 'client-phone') { state.clientDraft.phone = e.target.value; return; }
+    if (id === 'client-address') { state.clientDraft.address = e.target.value; return; }
+    if (id === 'client-zone') { state.clientDraft.zone = e.target.value; return; }
+    if (id === 'messenger-name') { state.messengerDraft.name = e.target.value; return; }
+    if (id === 'messenger-phone') { state.messengerDraft.phone = e.target.value; return; }
+  });
+
+  document.body.addEventListener('change', (e) => {
+    if (e.target.id === 'client-zone') state.clientDraft.zone = e.target.value;
   });
 
   async function doLogin() {
