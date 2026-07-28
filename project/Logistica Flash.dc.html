@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/modernist-3721ec76-bf2d-4dd4-9380-3837727260ee/styles.css">
+  <script src="_ds/modernist-3721ec76-bf2d-4dd4-9380-3837727260ee/_ds_bundle.js"></script>
+  <style>
+    :root {
+      --color-bg: #f8f9fc;
+      --color-surface: #eef1f7;
+      --color-text: #2a251f;
+      --color-divider: color-mix(in srgb, #2a251f 22%, transparent);
+      --color-accent: #1a4faa;
+      --color-accent-2: #1a4faa;
+      --color-accent-100: #e8eefb;
+      --color-accent-200: #c3d3f2;
+      --color-accent-300: #93b0e6;
+      --color-accent-400: #5c85d3;
+      --color-accent-500: #2f62bb;
+      --color-accent-600: #1a4faa;
+      --color-accent-700: #123a80;
+      --color-accent-800: #0d2b5e;
+      --color-accent-900: #081b3d;
+      --color-accent-2-100: #e8eefb;
+      --color-accent-2-200: #c3d3f2;
+      --color-accent-2-300: #93b0e6;
+      --color-accent-2-400: #5c85d3;
+      --color-accent-2-500: #2f62bb;
+      --color-accent-2-600: #1a4faa;
+      --color-accent-2-700: #123a80;
+      --color-accent-2-800: #0d2b5e;
+      --color-accent-2-900: #081b3d;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+    }
+    body { -webkit-font-smoothing: antialiased; }
+    a:not(.btn):not(.wa-btn) { color: var(--color-accent-700); }
+    a:not(.btn):not(.wa-btn):hover { color: var(--color-accent-600); }
+    .nav .navlink { padding: 8px 16px; border-radius: var(--radius-md); font-family: var(--font-heading); font-weight: 600; font-size: 14px; color: var(--color-text); text-decoration: none; transition: background .15s, color .15s; }
+    .nav .navlink:hover { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent-700); }
+    .nav .navlink[aria-current='page'] { background: var(--color-accent); color: #ffffff; }
+  </style>
+</helmet>
+<sc-if value="{{ showLogin }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);display:flex;align-items:center;justify-content:center;padding:16px">
+    <div class="card elev-md" style="max-width:340px;width:100%">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:var(--space-2)">
+        <img src="assets/logo-logistica-flash.png" alt="Logística Flash" style="height:32px;width:32px;object-fit:contain">
+        <div class="card-title">Logística Flash</div>
+      </div>
+      <p class="text-muted" style="margin-bottom:var(--space-3)">Acceso administrativo</p>
+      <div class="field">
+        <label>Usuario</label>
+        <input class="input" type="text" value="{{ loginForm.username }}" onChange="{{ setLoginUsername }}" placeholder="admin">
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input class="input" type="password" value="{{ loginForm.password }}" onChange="{{ setLoginPassword }}" placeholder="••••••••">
+      </div>
+      <sc-if value="{{ loginError }}" hint-placeholder-val="{{ false }}">
+        <p style="color:#b3261e;font-size:13px;margin:0 0 var(--space-2)">Usuario o contraseña incorrectos.</p>
+      </sc-if>
+      <button class="btn btn-primary btn-block" type="button" onClick="{{ doLogin }}" style="justify-content:center">Ingresar</button>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isAuthenticated }}" hint-placeholder-val="{{ true }}">
+<div style="min-height:100vh;background:var(--color-bg);color:var(--color-text)">
+  <div class="nav" style="background:var(--color-surface);padding:16px 24px;flex-wrap:wrap;row-gap:10px">
+    <div class="nav-brand" style="display:flex;align-items:center;gap:10px;font-size:24px">
+      <img src="assets/logo-logistica-flash.png" alt="Logística Flash" style="height:36px;width:36px;object-fit:contain">
+      Logística Flash
+    </div>
+    <a href="#" class="navlink" onClick="{{ goHome }}" aria-current="{{ ariaHome }}">Inicio</a>
+    <a href="#" class="navlink" onClick="{{ goClientes }}" aria-current="{{ ariaClientes }}">Clientes</a>
+    <a href="#" class="navlink" onClick="{{ goPaquete }}" aria-current="{{ ariaPaquete }}">Registrar paquete</a>
+    <a href="#" class="navlink" onClick="{{ goLista }}" aria-current="{{ ariaLista }}">Lista del día</a>
+    <a href="#" class="navlink" onClick="{{ goMensajeros }}" aria-current="{{ ariaMensajeros }}">Mensajeros</a>
+    <a href="#" class="navlink" onClick="{{ doLogout }}">Salir</a>
+  </div>
+
+  <div style="max-width:1040px;margin:0 auto;padding:var(--space-6) var(--space-4) var(--space-8)">
+
+    <!-- ===== INICIO ===== -->
+    <sc-if value="{{ isInicio }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <h6 class="text-muted" style="margin-bottom:2px">{{ todayLabel }}</h6>
+        <h1 style="margin-bottom:var(--space-6)">Buenos días</h1>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-3);margin-bottom:var(--space-6)">
+          <div class="card elev-sm">
+            <div class="card-kicker">Hoy</div>
+            <div class="card-title" style="font-size:34px">{{ stats.assignedToday }}</div>
+            <p class="card-body">paquetes asignados</p>
+          </div>
+          <div class="card elev-sm">
+            <div class="card-kicker">Sin identificar</div>
+            <div class="card-title" style="font-size:34px">{{ stats.pending }}</div>
+            <p class="card-body">paquetes sin cliente</p>
+          </div>
+          <div class="card elev-sm">
+            <div class="card-kicker">En bodega</div>
+            <div class="card-title" style="font-size:34px">{{ stats.esperandoLlegada }}</div>
+            <p class="card-body">esperando llegada</p>
+          </div>
+          <div class="card elev-sm">
+            <div class="card-kicker">Clientes</div>
+            <div class="card-title" style="font-size:34px">{{ stats.totalClients }}</div>
+            <p class="card-body">clientes guardados</p>
+          </div>
+        </div>
+
+        <hr class="hr">
+
+        <h4 style="margin:var(--space-4) 0 var(--space-3)">Accesos rápidos</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--space-3)">
+          <button class="btn btn-secondary btn-block" onClick="{{ goClientes }}" type="button" style="gap:10px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>
+            <span>Agregar cliente</span>
+            <span style="margin-left:auto">→</span>
+          </button>
+          <button class="btn btn-secondary btn-block" onClick="{{ goPaquete }}" type="button" style="gap:10px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="m7.5 4.27 9 5.15"></path><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>
+            <span>Registrar paquete</span>
+            <span style="margin-left:auto">→</span>
+          </button>
+          <button class="btn btn-secondary btn-block" onClick="{{ goLista }}" type="button" style="gap:10px">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M12 11h4"></path><path d="M12 16h4"></path><path d="M8 11h.01"></path><path d="M8 16h.01"></path></svg>
+            <span>Lista del día por mensajero</span>
+            <span style="margin-left:auto">→</span>
+          </button>
+        </div>
+
+        <hr class="hr">
+
+        <h4 style="margin:var(--space-4) 0 var(--space-3)">{{ pendingCard.title }}</h4>
+        <div class="card elev-sm" style="{{ pendingCard.cardStyle }}">
+          <p style="margin:0;font-size:15px">{{ pendingCard.message }}</p>
+          <sc-if value="{{ pendingCard.showCta }}" hint-placeholder-val="{{ false }}">
+            <button class="btn btn-primary" type="button" onClick="{{ goPaquete }}" style="width:fit-content">Asignar pendientes →</button>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ===== CLIENTES ===== -->
+    <sc-if value="{{ isClientes }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <h1 style="margin-bottom:2px">{{ clientFormTitle }}</h1>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Se guarda una sola vez por cliente. Así los mensajeros ya no dependen de mensajes sueltos por WhatsApp.</p>
+
+        <div class="card elev-sm" style="max-width:560px;margin-bottom:var(--space-8)">
+          <div class="field">
+            <label>Nombre completo *</label>
+            <input class="input" type="text" value="{{ clientForm.name }}" onChange="{{ setClientName }}" placeholder="Ej: María Fernández Solís">
+          </div>
+          <div class="field">
+            <label>Teléfono *</label>
+            <input class="input" type="tel" value="{{ clientForm.phone }}" onChange="{{ setClientPhone }}" placeholder="Ej: 8888-1234">
+          </div>
+          <div class="field">
+            <label>Dirección (link de Waze o Google Maps) — opcional</label>
+            <input class="input" type="text" value="{{ clientForm.address }}" onChange="{{ setClientAddress }}" placeholder="Pega aquí el link de ubicación">
+          </div>
+          <div class="field">
+            <label>Zona — opcional</label>
+            <select class="input" value="{{ clientForm.zone }}" onChange="{{ setClientZone }}">
+              <option value="">Selecciona provincia...</option>
+              <option value="San José">San José</option>
+              <option value="Alajuela">Alajuela</option>
+              <option value="Cartago">Cartago</option>
+              <option value="Heredia">Heredia</option>
+              <option value="Guanacaste">Guanacaste</option>
+              <option value="Puntarenas">Puntarenas</option>
+              <option value="Limón">Limón</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+            <button class="btn btn-primary" type="button" onClick="{{ saveClient }}">{{ clientSaveLabel }}</button>
+            <sc-if value="{{ isEditingClient }}" hint-placeholder-val="{{ false }}">
+              <button class="btn btn-secondary" type="button" onClick="{{ cancelEditClient }}">Cancelar</button>
+            </sc-if>
+          </div>
+        </div>
+
+        <hr class="hr">
+
+        <h4 style="margin:var(--space-4) 0 var(--space-3)">Clientes guardados ({{ clients.length }})</h4>
+        <div style="overflow-x:auto">
+        <table class="table">
+          <thead>
+            <tr><th>Nombre</th><th>Zona</th><th>Teléfono</th><th>Dirección</th><th></th></tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ pageClients }}" as="c" hint-placeholder-count="4">
+              <tr>
+                <td>{{ c.name }}
+                  <sc-if value="{{ c.incomplete }}" hint-placeholder-val="{{ false }}">
+                    <span class="tag" style="background:#fdecc8;color:#8a5a00;margin-left:6px">Falta info</span>
+                  </sc-if>
+                </td>
+                <td><span class="tag tag-neutral">{{ c.zoneLabel }}</span></td>
+                <td>{{ c.phone }}</td>
+                <td>
+                  <sc-if value="{{ c.hasAddress }}" hint-placeholder-val="{{ true }}">
+                    <a href="{{ c.address }}" target="_blank" rel="noopener">Ver ubicación</a>
+                  </sc-if>
+                  <sc-if value="{{ c.noAddress }}" hint-placeholder-val="{{ false }}">
+                    <span class="text-muted">Sin dirección</span>
+                  </sc-if>
+                </td>
+                <td style="text-align:right;white-space:nowrap">
+                  <button class="btn btn-icon btn-ghost" type="button" onClick="{{ c.onEdit }}" aria-label="Editar" title="Editar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+                  </button>
+                  <button class="btn btn-icon btn-ghost" type="button" onClick="{{ c.onDelete }}" aria-label="Eliminar" title="Eliminar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                  </button>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+        </div>
+        <sc-if value="{{ clientsEmpty }}" hint-placeholder-val="{{ false }}">
+          <p class="text-muted" style="margin-top:var(--space-3)">Aún no hay clientes guardados.</p>
+        </sc-if>
+        <sc-if value="{{ showPagination }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-3)">
+            <button class="btn btn-secondary" type="button" onClick="{{ prevClientsPage }}" disabled="{{ prevDisabled }}">← Anterior</button>
+            <span class="text-muted">Página {{ clientsPageDisplay }} de {{ clientsTotalPages }}</span>
+            <button class="btn btn-secondary" type="button" onClick="{{ nextClientsPage }}" disabled="{{ nextDisabled }}">Siguiente →</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- ===== REGISTRAR PAQUETE ===== -->
+    <sc-if value="{{ isPaquete }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <h1 style="margin-bottom:2px">Registrar paquete</h1>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
+
+        <div class="card elev-sm" style="max-width:520px;margin-bottom:var(--space-8)">
+          <div class="card-kicker">{{ formKicker }}</div>
+          <div class="card-title" style="margin-bottom:var(--space-2)">{{ formTitle }}</div>
+          <div class="field">
+            <label>ID de tracking</label>
+            <input class="input" type="text" value="{{ pkgDraft.tracking }}" onChange="{{ setTracking }}" placeholder="Ej: TBA912345678">
+          </div>
+          <div class="field">
+            <label>Peso (libras)</label>
+            <input class="input" type="number" step="0.1" min="0" value="{{ pkgDraft.weight }}" onChange="{{ setWeight }}" placeholder="Ej: 3.5">
+          </div>
+          <div class="field">
+            <label>Costo estimado (${{ ratePerLb }}/lb) — editable</label>
+            <input class="input" type="number" step="0.01" min="0" value="{{ pkgDraft.cost }}" onChange="{{ setCost }}" placeholder="0.00">
+          </div>
+
+          <sc-if value="{{ noSelection }}" hint-placeholder-val="{{ true }}">
+            <div class="field">
+              <label>Cliente — buscar por nombre</label>
+              <input class="input" type="text" value="{{ search }}" onChange="{{ setSearch }}" placeholder="Escribe el nombre del cliente...">
+            </div>
+            <sc-if value="{{ hasMatches }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:6px;border:1px solid var(--color-divider);padding:var(--space-2);margin-bottom:var(--space-2)">
+                <sc-for list="{{ matches }}" as="mt" hint-placeholder-count="3">
+                  <button type="button" onClick="{{ mt.onSelect }}" class="btn btn-secondary" style="justify-content:space-between;text-align:left;height:auto;padding:var(--space-2)">
+                    <span>{{ mt.name }}</span>
+                    <span style="display:flex;gap:6px">
+                      <span class="tag tag-neutral">{{ mt.zone }}</span>
+                      <span class="tag tag-accent">{{ mt.messengerName }}</span>
+                    </span>
+                  </button>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ noMatchesFound }}" hint-placeholder-val="{{ false }}">
+              <p class="text-muted">Sin coincidencias. Revisa el nombre o agrégalo en "Clientes".</p>
+            </sc-if>
+          </sc-if>
+
+          <sc-if value="{{ hasSelection }}" hint-placeholder-val="{{ false }}">
+            <div style="border:1px solid var(--color-divider);padding:var(--space-3);margin-bottom:var(--space-3)">
+              <div style="font-family:var(--font-heading);font-weight:800;font-size:17px;margin-bottom:6px">{{ selectedClient.name }}</div>
+              <p class="card-body" style="margin-bottom:4px">Teléfono: {{ selectedClient.phone }}</p>
+              <p class="card-body" style="margin-bottom:6px">Dirección: <a href="{{ selectedClient.address }}" target="_blank" rel="noopener">Ver ubicación</a></p>
+              <div style="display:flex;gap:6px">
+                <span class="tag tag-neutral">{{ selectedClient.zone }}</span>
+                <span class="tag tag-accent">Mensajero: {{ selectedClient.messengerName }}</span>
+              </div>
+            </div>
+            <button class="btn btn-ghost" type="button" onClick="{{ changeSelection }}" style="margin-bottom:var(--space-2)">Cambiar cliente</button>
+          </sc-if>
+
+          <div style="display:flex;gap:var(--space-2)">
+            <button class="btn btn-primary" type="button" onClick="{{ saveFormPkg }}" disabled="{{ createDisabled }}">{{ formButtonLabel }}</button>
+            <sc-if value="{{ isEditingPkg }}" hint-placeholder-val="{{ false }}">
+              <button class="btn btn-secondary" type="button" onClick="{{ cancelFormEdit }}">Cancelar</button>
+            </sc-if>
+          </div>
+        </div>
+
+        <hr class="hr">
+        <h4 style="margin:var(--space-4) 0 var(--space-3)">Identificados — en tránsito ({{ waitingArrivalTotal }})</h4>
+        <div class="field" style="max-width:320px">
+          <label>Buscar por nombre o tracking</label>
+          <input class="input" type="text" value="{{ waitingSearch }}" onChange="{{ setWaitingSearch }}" placeholder="Ej: María o TBA912...">
+        </div>
+        <sc-for list="{{ waitingArrival }}" as="w" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap;gap:8px">
+            <div>
+              <strong style="font-family:var(--font-heading)">{{ w.clientName }}</strong>
+              <span class="text-muted" style="margin-left:8px">{{ w.tracking }} · {{ w.weight }} lb · ${{ w.cost }}</span>
+              <span class="tag tag-neutral" style="margin-left:8px">{{ w.messengerName }}</span>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-icon btn-ghost" type="button" onClick="{{ w.onEdit }}" aria-label="Editar" title="Editar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+              </button>
+              <button class="btn btn-primary" type="button" onClick="{{ w.onArrive }}">Marcar como llegado → asignar a mensajero</button>
+            </div>
+          </div>
+        </sc-for>
+        <sc-if value="{{ waitingEmpty }}" hint-placeholder-val="{{ false }}">
+          <p class="text-muted" style="margin-top:var(--space-2)">No hay paquetes esperando llegada.</p>
+        </sc-if>
+        <sc-if value="{{ showWaitingPagination }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-3)">
+            <button class="btn btn-secondary" type="button" onClick="{{ prevWaitingPage }}" disabled="{{ waitingPrevDisabled }}">← Anterior</button>
+            <span class="text-muted">Página {{ waitingPageDisplay }} de {{ waitingTotalPages }}</span>
+            <button class="btn btn-secondary" type="button" onClick="{{ nextWaitingPage }}" disabled="{{ waitingNextDisabled }}">Siguiente →</button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- ===== LISTA DEL DIA ===== -->
+    <sc-if value="{{ isLista }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <h1 style="margin-bottom:2px">Lista del día por mensajero</h1>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">{{ todayLabel }} — envía la ruta completa a cada mensajero en un solo mensaje.</p>
+
+        <div style="display:flex;flex-direction:column;gap:var(--space-4)">
+          <sc-for list="{{ dailyLists }}" as="d" hint-placeholder-count="3">
+            <div class="card elev-sm">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px">
+                <div>
+                  <div class="card-kicker">{{ d.zone }}</div>
+                  <div class="card-title">{{ d.name }}</div>
+                </div>
+                <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>{{ d.count }}</span><span>paquetes hoy</span></span>
+              </div>
+              <div style="overflow-x:auto">
+              <table class="table" style="margin-top:var(--space-2);min-width:640px">
+                <thead>
+                  <tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo</th><th></th></tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ d.entries }}" as="e" hint-placeholder-count="2">
+                    <tr>
+                      <td>{{ e.name }}</td>
+                      <td><a href="{{ e.address }}" target="_blank" rel="noopener">Ver ubicación</a></td>
+                      <td>{{ e.phone }}</td>
+                      <td>{{ e.tracking }}</td>
+                      <td>${{ e.cost }}</td>
+                      <td style="text-align:right">
+                        <button class="btn btn-icon btn-ghost" type="button" onClick="{{ e.onRemove }}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        </button>
+                      </td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="4" style="text-align:right;font-family:var(--font-heading);font-weight:800">Total a cobrar en esta ruta</td>
+                    <td style="text-align:right;font-family:var(--font-heading);font-weight:800">${{ d.totalCost }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+              </div>
+              <sc-if value="{{ d.empty }}" hint-placeholder-val="{{ false }}">
+                <p class="text-muted" style="margin-top:var(--space-2)">Sin paquetes asignados hoy.</p>
+              </sc-if>
+              <a href="{{ d.whatsappHref }}" target="_blank" rel="noopener" class="wa-btn" style="margin-top:var(--space-3);width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none" style-hover="background:#1ea952">
+                <svg width="18" height="18" viewBox="0 0 32 32" fill="#ffffff" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>
+                <span>Enviar lista por WhatsApp</span>
+              </a>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ===== MENSAJEROS ===== -->
+    <sc-if value="{{ isMensajeros }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <h1 style="margin-bottom:2px">{{ messengerFormTitle }}</h1>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Nombre, teléfono para WhatsApp y las provincias que cubre cada mensajero.</p>
+
+        <div class="card elev-sm" style="max-width:560px;margin-bottom:var(--space-8)">
+          <div class="field">
+            <label>Nombre *</label>
+            <input class="input" type="text" value="{{ messengerForm.name }}" onChange="{{ setMessengerName }}" placeholder="Ej: Mensajero 1">
+          </div>
+          <div class="field">
+            <label>Teléfono (WhatsApp) *</label>
+            <input class="input" type="tel" value="{{ messengerForm.phone }}" onChange="{{ setMessengerPhone }}" placeholder="Ej: 8888-1234">
+          </div>
+          <div class="field">
+            <label>Provincias que cubre</label>
+            <div style="display:flex;flex-wrap:wrap;gap:10px">
+              <sc-for list="{{ provinciaOptions }}" as="po" hint-placeholder-count="7">
+                <button type="button" onClick="{{ po.onToggle }}" style="{{ po.chipStyle }}">{{ po.name }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+            <button class="btn btn-primary" type="button" onClick="{{ saveMessenger }}">{{ messengerSaveLabel }}</button>
+            <sc-if value="{{ isEditingMessenger }}" hint-placeholder-val="{{ false }}">
+              <button class="btn btn-secondary" type="button" onClick="{{ cancelEditMessenger }}">Cancelar</button>
+            </sc-if>
+          </div>
+        </div>
+
+        <hr class="hr">
+
+        <h4 style="margin:var(--space-4) 0 var(--space-3)">Mensajeros ({{ messengers.length }})</h4>
+        <div style="overflow-x:auto">
+        <table class="table">
+          <thead>
+            <tr><th>Nombre</th><th>Teléfono</th><th>Provincias</th><th></th></tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ messengers }}" as="m" hint-placeholder-count="3">
+              <tr>
+                <td>{{ m.name }}
+                  <sc-if value="{{ m.incomplete }}" hint-placeholder-val="{{ false }}">
+                    <span class="tag" style="background:#fdecc8;color:#8a5a00;margin-left:6px">Sin zona</span>
+                  </sc-if>
+                </td>
+                <td>{{ m.phone }}</td>
+                <td><span class="tag tag-neutral">{{ m.zoneLabel }}</span></td>
+                <td style="text-align:right;white-space:nowrap">
+                  <button class="btn btn-ghost" type="button" onClick="{{ m.onEdit }}">Editar</button>
+                  <button class="btn btn-ghost" type="button" onClick="{{ m.onDelete }}">Eliminar</button>
+                </td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+        </div>
+        <sc-if value="{{ messengersEmpty }}" hint-placeholder-val="{{ false }}">
+          <p class="text-muted" style="margin-top:var(--space-3)">Aún no hay mensajeros registrados.</p>
+        </sc-if>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const PROVINCIAS = ['San José', 'Alajuela', 'Cartago', 'Heredia', 'Guanacaste', 'Puntarenas', 'Limón'];
+const STORE_KEY = 'logisticaFlash_v2';
+const AUTH_KEY = 'logisticaFlash_auth';
+const ADMIN_USER = 'admin';
+const ADMIN_PASS = 'flash2026';
+const RATE_PER_LB = 4.25;
+
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function messengerForZone(zone, messengers) { return zone ? (messengers.find(m => Array.isArray(m.zones) && m.zones.includes(zone)) || null) : null; }
+function waPhone(phone) { return '506' + String(phone).replace(/\D/g, ''); }
+
+const LEGACY_ZONE_SPLIT = { 'Heredia y Alajuela': ['Heredia', 'Alajuela'] };
+function normalizeClientZone(zone) {
+  if (!zone) return '';
+  if (PROVINCIAS.includes(zone)) return zone;
+  if (LEGACY_ZONE_SPLIT[zone]) return LEGACY_ZONE_SPLIT[zone][0];
+  return zone;
+}
+function migrateData(data) {
+  const clients = (data.clients || []).map(c => ({ ...c, zone: normalizeClientZone(c.zone) }));
+  const messengers = (data.messengers || []).map(m => {
+    if (Array.isArray(m.zones)) return m;
+    const zones = LEGACY_ZONE_SPLIT[m.zone] || (m.zone && PROVINCIAS.includes(m.zone) ? [m.zone] : []);
+    return { id: m.id, name: m.name, phone: m.phone, zones };
+  });
+  const packages = (data.packages || []).map(p => ({
+    ...p,
+    cost: typeof p.cost === 'number' ? p.cost : Math.round(p.weight * RATE_PER_LB * 100) / 100,
+    arrived: typeof p.arrived === 'boolean' ? p.arrived : !!p.clientId,
+  }));
+  return { clients, packages, messengers };
+}
+
+function seedData() {
+  const today = todayISO();
+  const messengers = [
+    { id: 'msg1', name: 'Mensajero 1', phone: '8880-1111', zones: ['Heredia', 'Alajuela'] },
+    { id: 'msg2', name: 'Mensajero 2', phone: '8880-2222', zones: ['San José'] },
+    { id: 'msg3', name: 'Mensajero 3', phone: '8880-3333', zones: ['Cartago'] },
+  ];
+  const clients = [
+    { id: 'c1', name: 'María Fernández Solís', phone: '8888-1234', address: 'https://waze.com/ul/hd12345', zone: 'Heredia' },
+    { id: 'c2', name: 'Carlos Ramírez Vargas', phone: '8712-4455', address: 'https://waze.com/ul/al56789', zone: 'Alajuela' },
+    { id: 'c3', name: 'Ana Sofía Chaves', phone: '8399-2210', address: 'https://maps.app.goo.gl/sanjose01', zone: 'San José' },
+    { id: 'c4', name: 'Luis Diego Mora', phone: '8654-7789', address: 'https://maps.app.goo.gl/sanjose02', zone: 'San José' },
+    { id: 'c5', name: 'Gabriela Salas Cordero', phone: '8901-3345', address: 'https://waze.com/ul/cartago01', zone: 'Cartago' },
+    { id: 'c6', name: 'José Pablo Jiménez', phone: '8223-9981', address: 'https://waze.com/ul/cartago02', zone: 'Cartago' },
+    { id: 'c7', name: 'Fiorella Araya Rojas', phone: '8577-1120', address: 'https://maps.app.goo.gl/heredia03', zone: 'Heredia' },
+    { id: 'c8', name: 'Esteban Vindas Ureña', phone: '8140-6650', address: 'https://maps.app.goo.gl/sanjose03', zone: 'San José' },
+  ];
+  const packages = [
+    { id: 'pk1', tracking: 'TBA912345671', weight: 2.4, cost: 10.2, clientId: 'c1', arrived: true, assignedDate: today },
+    { id: 'pk2', tracking: 'TBA912345672', weight: 5.1, cost: 21.68, clientId: 'c2', arrived: true, assignedDate: today },
+    { id: 'pk3', tracking: 'TBA912345673', weight: 1.2, cost: 5.1, clientId: 'c3', arrived: true, assignedDate: today },
+    { id: 'pk4', tracking: 'TBA912345674', weight: 3.6, cost: 15.3, clientId: 'c4', arrived: true, assignedDate: today },
+    { id: 'pk5', tracking: 'TBA912345675', weight: 0.8, cost: 3.4, clientId: 'c5', arrived: true, assignedDate: today },
+    { id: 'pk6', tracking: 'TBA912345676', weight: 7.3, cost: 31.03, clientId: 'c6', arrived: true, assignedDate: today },
+    { id: 'pk7', tracking: 'TBA912345677', weight: 4.0, cost: 17.0, clientId: 'c7', arrived: true, assignedDate: today },
+    { id: 'pk8', tracking: 'TBA912345678', weight: 2.9, cost: 12.33, clientId: 'c8', arrived: false, assignedDate: null },
+    { id: 'pk9', tracking: 'TBA912345679', weight: 1.5, cost: 6.38, clientId: null, arrived: false, assignedDate: null },
+    { id: 'pk10', tracking: 'TBA912345680', weight: 6.2, cost: 26.35, clientId: null, arrived: false, assignedDate: null },
+  ];
+  const clientCycle = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'];
+  for (let i = 0; i < 20; i++) {
+    const weight = Math.round((1 + (i * 1.7) % 9) * 10) / 10;
+    packages.push({
+      id: 'pk' + (100 + i),
+      tracking: 'TBA9124' + (10000 + i * 7),
+      weight,
+      cost: Math.round(weight * RATE_PER_LB * 100) / 100,
+      clientId: clientCycle[i % clientCycle.length],
+      arrived: false,
+      assignedDate: null,
+    });
+  }
+  return { clients, packages, messengers };
+}
+
+class Component extends DCLogic {
+  state = {
+    tab: 'inicio',
+    clients: [],
+    packages: [],
+    messengers: [],
+    messengerForm: { id: null, name: '', phone: '', zones: [] },
+    clientForm: { id: null, name: '', phone: '', address: '', zone: '' },
+    pkgDraft: { tracking: '', weight: '', cost: '' },
+    editingPkgId: null,
+    waitingSearch: '',
+    waitingPage: 1,
+    search: '',
+    selectedClientId: null,
+    clientsPage: 1,
+    isAuthenticated: false,
+    loginForm: { username: '', password: '' },
+    loginError: false,
+  };
+
+  componentDidMount() {
+    try {
+      if (sessionStorage.getItem(AUTH_KEY) === '1') this.setState({ isAuthenticated: true });
+    } catch (e) {}
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        const migrated = migrateData(data);
+        this.setState(migrated);
+        this.persist(migrated);
+        return;
+      }
+    } catch (e) {}
+    const seeded = seedData();
+    this.setState(seeded);
+    this.persist(seeded);
+  }
+
+  persist(data) {
+    const clients = data && data.clients ? data.clients : this.state.clients;
+    const packages = data && data.packages ? data.packages : this.state.packages;
+    const messengers = data && data.messengers ? data.messengers : this.state.messengers;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ clients, packages, messengers })); } catch (e) {}
+  }
+
+  setMessengerField(field, e) {
+    this.setState(s => ({ messengerForm: { ...s.messengerForm, [field]: e.target.value } }));
+  }
+
+  toggleMessengerZone(zone) {
+    this.setState(s => {
+      const zones = s.messengerForm.zones.includes(zone) ? s.messengerForm.zones.filter(z => z !== zone) : [...s.messengerForm.zones, zone];
+      return { messengerForm: { ...s.messengerForm, zones } };
+    });
+  }
+
+  saveMessenger() {
+    const f = this.state.messengerForm;
+    if (!f.name.trim() || !f.phone.trim()) return;
+    this.setState(s => {
+      let messengers;
+      if (f.id) {
+        messengers = s.messengers.map(m => m.id === f.id ? { ...m, name: f.name.trim(), phone: f.phone.trim(), zones: f.zones } : m);
+      } else {
+        messengers = [...s.messengers, { id: 'msg' + Date.now(), name: f.name.trim(), phone: f.phone.trim(), zones: f.zones }];
+      }
+      this.persist({ clients: s.clients, packages: s.packages, messengers });
+      return { messengers, messengerForm: { id: null, name: '', phone: '', zones: [] } };
+    });
+  }
+
+  startEditMessenger(m) {
+    this.setState({ messengerForm: { id: m.id, name: m.name, phone: m.phone, zones: [...m.zones] } });
+  }
+
+  cancelEditMessenger() {
+    this.setState({ messengerForm: { id: null, name: '', phone: '', zones: [] } });
+  }
+
+  deleteMessenger(id) {
+    if (!window.confirm('¿Eliminar este mensajero? Las zonas que cubre quedarán sin mensajero asignado.')) return;
+    this.setState(s => {
+      const messengers = s.messengers.filter(m => m.id !== id);
+      this.persist({ clients: s.clients, packages: s.packages, messengers });
+      return { messengers };
+    });
+  }
+
+  setTab(tab) { this.setState({ tab }); }
+
+  setLoginField(field, e) {
+    this.setState(s => ({ loginForm: { ...s.loginForm, [field]: e.target.value }, loginError: false }));
+  }
+
+  doLogin() {
+    const { username, password } = this.state.loginForm;
+    if (username.trim() === ADMIN_USER && password === ADMIN_PASS) {
+      try { sessionStorage.setItem(AUTH_KEY, '1'); } catch (e) {}
+      this.setState({ isAuthenticated: true, loginError: false, loginForm: { username: '', password: '' } });
+    } else {
+      this.setState({ loginError: true });
+    }
+  }
+
+  doLogout(e) {
+    e.preventDefault();
+    try { sessionStorage.removeItem(AUTH_KEY); } catch (e2) {}
+    this.setState({ isAuthenticated: false });
+  }
+
+  unassignPackage(id) {
+    if (!window.confirm('¿Quitar este paquete de la ruta de hoy? Volverá a pendientes por asignar.')) return;
+    this.setState(s => {
+      const packages = s.packages.map(p => p.id === id ? { ...p, clientId: null, arrived: false, assignedDate: null } : p);
+      this.persist({ clients: s.clients, packages, messengers: s.messengers });
+      return { packages };
+    });
+  }
+
+  goToClientes() {
+    this.setState({ tab: 'clientes', clientForm: { id: null, name: '', phone: '', address: '', zone: '' } });
+  }
+
+  setClientsPage(page) { this.setState({ clientsPage: page }); }
+
+  setClientField(field, e) {
+    this.setState(s => ({ clientForm: { ...s.clientForm, [field]: e.target.value } }));
+  }
+
+  saveClient() {
+    const f = this.state.clientForm;
+    if (!f.name.trim() || !f.phone.trim()) return;
+    this.setState(s => {
+      let clients;
+      if (f.id) {
+        clients = s.clients.map(c => c.id === f.id ? { ...c, name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), zone: f.zone } : c);
+      } else {
+        const newClient = { id: 'c' + Date.now(), name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), zone: f.zone };
+        clients = [...s.clients, newClient];
+      }
+      this.persist({ clients, packages: s.packages });
+      return { clients, clientForm: { id: null, name: '', phone: '', address: '', zone: '' } };
+    });
+  }
+
+  startEditClient(client) {
+    this.setState({ clientForm: { id: client.id, name: client.name, phone: client.phone, address: client.address, zone: client.zone } });
+  }
+
+  cancelEditClient() {
+    this.setState({ clientForm: { id: null, name: '', phone: '', address: '', zone: '' } });
+  }
+
+  deleteClient(id) {
+    if (!window.confirm('¿Eliminar este cliente? Sus paquetes asignados quedarán pendientes.')) return;
+    this.setState(s => {
+      const clients = s.clients.filter(c => c.id !== id);
+      const packages = s.packages.map(p => p.clientId === id ? { ...p, clientId: null, assignedDate: null } : p);
+      this.persist({ clients, packages });
+      return { clients, packages };
+    });
+  }
+
+  setPkgDraftField(field, e) {
+    this.setState(s => ({ pkgDraft: { ...s.pkgDraft, [field]: e.target.value } }));
+  }
+
+  setWeightField(e) {
+    const w = e.target.value;
+    this.setState(s => ({ pkgDraft: { ...s.pkgDraft, weight: w, cost: w ? (parseFloat(w) * RATE_PER_LB).toFixed(2) : '' } }));
+  }
+
+  saveFormPkg() {
+    const { tracking, weight, cost } = this.state.pkgDraft;
+    const { editingPkgId, selectedClientId } = this.state;
+    if (!tracking.trim() || !weight || !selectedClientId) return;
+    const finalCost = cost ? parseFloat(cost) : parseFloat(weight) * RATE_PER_LB;
+    this.setState(s => {
+      let packages;
+      if (editingPkgId) {
+        packages = s.packages.map(p => p.id === editingPkgId
+          ? { ...p, tracking: tracking.trim(), weight: parseFloat(weight), cost: finalCost, clientId: selectedClientId }
+          : p);
+      } else {
+        packages = [...s.packages, { id: 'pk' + Date.now(), tracking: tracking.trim(), weight: parseFloat(weight), cost: finalCost, clientId: selectedClientId, arrived: false, assignedDate: null }];
+      }
+      this.persist({ clients: s.clients, packages, messengers: s.messengers });
+      return { packages, pkgDraft: { tracking: '', weight: '', cost: '' }, search: '', selectedClientId: null, editingPkgId: null };
+    });
+  }
+
+  startEditPkg(p) {
+    this.setState({
+      editingPkgId: p.id,
+      pkgDraft: { tracking: p.tracking, weight: String(p.weight), cost: String(p.cost) },
+      selectedClientId: p.clientId,
+      search: '',
+    });
+  }
+
+  cancelFormEdit() {
+    this.setState({ editingPkgId: null, pkgDraft: { tracking: '', weight: '', cost: '' }, search: '', selectedClientId: null });
+  }
+
+  setWaitingPage(page) { this.setState({ waitingPage: page }); }
+
+  markArrived(id) {
+    if (!window.confirm('¿Confirmas que este paquete ya está aquí y listo para el mensajero?')) return;
+    const today = todayISO();
+    this.setState(s => {
+      const packages = s.packages.map(p => p.id === id ? { ...p, arrived: true, assignedDate: today } : p);
+      this.persist({ clients: s.clients, packages, messengers: s.messengers });
+      return { packages };
+    });
+  }
+
+  selectClient(id) {
+    this.setState({ selectedClientId: id });
+  }
+
+  changeSelection() {
+    this.setState({ selectedClientId: null, search: '' });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const today = todayISO();
+    const todayLabelRaw = new Date().toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const todayLabel = todayLabelRaw.charAt(0).toUpperCase() + todayLabelRaw.slice(1);
+
+    const assignedToday = s.packages.filter(p => p.assignedDate === today).length;
+    const pending = s.packages.filter(p => !p.clientId).length;
+    const esperandoLlegadaStat = s.packages.filter(p => p.clientId && !p.arrived).length;
+
+    const sinIdentificar = s.packages.filter(p => !p.clientId).length;
+    const esperandoLlegada = s.packages.filter(p => p.clientId && !p.arrived).length;
+    const pendingParts = [];
+    if (sinIdentificar > 0) pendingParts.push(`${sinIdentificar} sin identificar`);
+    if (esperandoLlegada > 0) pendingParts.push(`${esperandoLlegada} esperando llegada`);
+    const pendingCard = pendingParts.length > 0
+      ? { title: 'Acción pendiente', message: `Tienes paquetes por revisar: ${pendingParts.join(', ')}.`, showCta: true, cardStyle: 'border:1px solid var(--color-accent-300);background:var(--color-accent-100);gap:var(--space-3)' }
+      : { title: 'Acción pendiente', message: 'Todos los paquetes están identificados y asignados. Buen trabajo.', showCta: false, cardStyle: '' };
+
+    const clients = s.clients.map(c => ({
+      ...c,
+      onEdit: () => this.startEditClient(c),
+      onDelete: () => this.deleteClient(c.id),
+    }));
+
+    const PAGE_SIZE = 8;
+    const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const clientsTotalPages = Math.max(1, Math.ceil(sortedClients.length / PAGE_SIZE));
+    const clientsPageClamped = Math.min(Math.max(1, s.clientsPage), clientsTotalPages);
+    const pageClients = sortedClients.slice((clientsPageClamped - 1) * PAGE_SIZE, clientsPageClamped * PAGE_SIZE).map(c => ({
+      ...c,
+      incomplete: !c.address || !c.zone,
+      zoneLabel: c.zone || 'Sin zona',
+      hasAddress: !!c.address,
+      noAddress: !c.address,
+    }));
+
+    const search = s.search;
+    const matches = search.trim()
+      ? s.clients.filter(c => c.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 6).map(c => {
+          const mm = messengerForZone(c.zone, s.messengers);
+          return { id: c.id, name: c.name, zone: c.zone || 'Sin zona', messengerName: mm ? mm.name : 'Sin mensajero', onSelect: () => this.selectClient(c.id) };
+        })
+      : [];
+
+    const selectedClientRaw = s.selectedClientId ? s.clients.find(c => c.id === s.selectedClientId) : null;
+    const selectedClientMessenger = selectedClientRaw ? messengerForZone(selectedClientRaw.zone, s.messengers) : null;
+    const selectedClient = selectedClientRaw ? { ...selectedClientRaw, zone: selectedClientRaw.zone || 'Sin zona', messengerName: selectedClientMessenger ? selectedClientMessenger.name : 'Sin mensajero' } : null;
+
+    const waitingArrivalAll = s.packages.filter(p => p.clientId && !p.arrived).map(p => {
+      const c = s.clients.find(cl => cl.id === p.clientId);
+      const mm = c ? messengerForZone(c.zone, s.messengers) : null;
+      return {
+        id: p.id, tracking: p.tracking, weight: p.weight, cost: p.cost,
+        clientName: c ? c.name : 'Cliente eliminado', messengerName: mm ? mm.name : 'Sin mensajero',
+        onArrive: () => this.markArrived(p.id),
+        onEdit: () => this.startEditPkg(p),
+      };
+    }).sort((a, b) => a.clientName.localeCompare(b.clientName, 'es'));
+
+    const waitingArrivalTotal = waitingArrivalAll.length;
+    const wq = s.waitingSearch.trim().toLowerCase();
+    const waitingFiltered = wq
+      ? waitingArrivalAll.filter(w => w.clientName.toLowerCase().includes(wq) || w.tracking.toLowerCase().includes(wq))
+      : waitingArrivalAll;
+    const WAITING_PAGE_SIZE = 8;
+    const waitingTotalPages = Math.max(1, Math.ceil(waitingFiltered.length / WAITING_PAGE_SIZE));
+    const waitingPageClamped = Math.min(Math.max(1, s.waitingPage), waitingTotalPages);
+    const waitingArrival = waitingFiltered.slice((waitingPageClamped - 1) * WAITING_PAGE_SIZE, waitingPageClamped * WAITING_PAGE_SIZE);
+
+    const dailyLists = s.messengers.map(m => {
+      const entries = s.packages
+        .filter(p => p.assignedDate === today)
+        .map(p => ({ p, c: s.clients.find(cl => cl.id === p.clientId) }))
+        .filter(x => x.c && x.c.zone && m.zones.includes(x.c.zone))
+        .map(x => ({ id: x.p.id, name: x.c.name, address: x.c.address, phone: x.c.phone, tracking: x.p.tracking, cost: x.p.cost, onRemove: () => this.unassignPackage(x.p.id) }));
+      const totalCost = entries.reduce((sum, e) => sum + (parseFloat(e.cost) || 0), 0).toFixed(2);
+      const zoneLabel = m.zones.join(', ') || 'Sin zona asignada';
+      const lines = entries.map((e, i) => `${i + 1}. ${e.name}\nDireccion: ${e.address}\nTelefono: ${e.phone}\nTracking: ${e.tracking}`);
+      const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
+      return {
+        id: m.id, name: m.name, zone: zoneLabel, count: entries.length, entries, empty: entries.length === 0, totalCost,
+        whatsappHref: `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`,
+      };
+    });
+
+    const messengers = s.messengers.map(m => ({
+      ...m, zoneLabel: m.zones.join(', ') || 'Sin zona', incomplete: m.zones.length === 0,
+      onEdit: () => this.startEditMessenger(m),
+      onDelete: () => this.deleteMessenger(m.id),
+    }));
+
+    return {
+      isInicio: s.tab === 'inicio', isClientes: s.tab === 'clientes', isPaquete: s.tab === 'paquete', isLista: s.tab === 'lista', isMensajeros: s.tab === 'mensajeros',
+      ariaHome: s.tab === 'inicio' ? 'page' : undefined,
+      ariaClientes: s.tab === 'clientes' ? 'page' : undefined,
+      ariaPaquete: s.tab === 'paquete' ? 'page' : undefined,
+      ariaLista: s.tab === 'lista' ? 'page' : undefined,
+      ariaMensajeros: s.tab === 'mensajeros' ? 'page' : undefined,
+      goHome: (e) => { e.preventDefault(); this.setTab('inicio'); },
+      goClientes: (e) => { e.preventDefault(); this.goToClientes(); },
+      goPaquete: (e) => { e.preventDefault(); this.setTab('paquete'); },
+      goLista: (e) => { e.preventDefault(); this.setTab('lista'); },
+      goMensajeros: (e) => { e.preventDefault(); this.setTab('mensajeros'); },
+
+      messengerFormTitle: s.messengerForm.id ? 'Editar mensajero' : 'Agregar mensajero',
+      messengerForm: s.messengerForm,
+      setMessengerName: (e) => this.setMessengerField('name', e),
+      setMessengerPhone: (e) => this.setMessengerField('phone', e),
+      provinciaOptions: PROVINCIAS.map(p => {
+        const checked = s.messengerForm.zones.includes(p);
+        return {
+          name: p, checked, onToggle: () => this.toggleMessengerZone(p),
+          chipStyle: `padding:7px 14px;border-radius:var(--radius-md);font-family:var(--font-heading);font-weight:600;font-size:13px;cursor:pointer;border:1px solid ${checked ? 'var(--color-accent)' : 'var(--color-divider)'};background:${checked ? 'var(--color-accent)' : 'transparent'};color:${checked ? '#ffffff' : 'var(--color-text)'}`,
+        };
+      }),
+      saveMessenger: () => this.saveMessenger(),
+      messengerSaveLabel: s.messengerForm.id ? 'Guardar cambios' : 'Guardar mensajero',
+      isEditingMessenger: !!s.messengerForm.id,
+      cancelEditMessenger: () => this.cancelEditMessenger(),
+      messengers,
+      messengersEmpty: messengers.length === 0,
+      todayLabel,
+      stats: { assignedToday, pending, esperandoLlegada: esperandoLlegadaStat, totalClients: s.clients.length },
+      pendingCard,
+
+      clientFormTitle: s.clientForm.id ? 'Editar cliente' : 'Agregar cliente',
+      clientForm: s.clientForm,
+      setClientName: (e) => this.setClientField('name', e),
+      setClientPhone: (e) => this.setClientField('phone', e),
+      setClientAddress: (e) => this.setClientField('address', e),
+      setClientZone: (e) => this.setClientField('zone', e),
+      saveClient: () => this.saveClient(),
+      clientSaveLabel: s.clientForm.id ? 'Guardar cambios' : 'Guardar cliente',
+      isEditingClient: !!s.clientForm.id,
+      cancelEditClient: () => this.cancelEditClient(),
+      clients,
+      pageClients,
+      clientsEmpty: clients.length === 0,
+      showPagination: clientsTotalPages > 1,
+      clientsPageDisplay: clientsPageClamped,
+      clientsTotalPages,
+      prevDisabled: clientsPageClamped <= 1,
+      nextDisabled: clientsPageClamped >= clientsTotalPages,
+      prevClientsPage: () => this.setClientsPage(Math.max(1, clientsPageClamped - 1)),
+      nextClientsPage: () => this.setClientsPage(Math.min(clientsTotalPages, clientsPageClamped + 1)),
+
+      pkgDraft: s.pkgDraft,
+      ratePerLb: RATE_PER_LB,
+      setTracking: (e) => this.setPkgDraftField('tracking', e),
+      setWeight: (e) => this.setWeightField(e),
+      setCost: (e) => this.setPkgDraftField('cost', e),
+      saveFormPkg: () => this.saveFormPkg(),
+      cancelFormEdit: () => this.cancelFormEdit(),
+      isEditingPkg: !!s.editingPkgId,
+      formKicker: s.editingPkgId ? 'Editar paquete' : 'Nuevo paquete',
+      formTitle: s.editingPkgId ? 'Datos del paquete y cliente' : 'Datos del paquete y cliente',
+      formButtonLabel: s.editingPkgId ? 'Guardar cambios' : 'Crear paquete',
+      createDisabled: !(s.pkgDraft.tracking.trim() && s.pkgDraft.weight && s.selectedClientId),
+      noSelection: !s.selectedClientId,
+      hasSelection: !!s.selectedClientId,
+      selectedClient,
+      search: s.search,
+      setSearch: (e) => this.setState({ search: e.target.value }),
+      matches,
+      hasMatches: matches.length > 0,
+      noMatchesFound: search.trim().length > 0 && matches.length === 0,
+      changeSelection: () => this.changeSelection(),
+      waitingArrival,
+      waitingArrivalTotal,
+      waitingEmpty: waitingFiltered.length === 0,
+      waitingSearch: s.waitingSearch,
+      setWaitingSearch: (e) => this.setState({ waitingSearch: e.target.value, waitingPage: 1 }),
+      showWaitingPagination: waitingTotalPages > 1,
+      waitingPageDisplay: waitingPageClamped,
+      waitingTotalPages,
+      waitingPrevDisabled: waitingPageClamped <= 1,
+      waitingNextDisabled: waitingPageClamped >= waitingTotalPages,
+      prevWaitingPage: () => this.setWaitingPage(Math.max(1, waitingPageClamped - 1)),
+      nextWaitingPage: () => this.setWaitingPage(Math.min(waitingTotalPages, waitingPageClamped + 1)),
+
+      dailyLists,
+      showLogin: !s.isAuthenticated,
+      isAuthenticated: s.isAuthenticated,
+      loginForm: s.loginForm,
+      loginError: s.loginError,
+      setLoginUsername: (e) => this.setLoginField('username', e),
+      setLoginPassword: (e) => this.setLoginField('password', e),
+      doLogin: () => this.doLogin(),
+      doLogout: (e) => this.doLogout(e),
+    };
+  }
+}
+
+</script>
+</body>
+</html>
