@@ -11,6 +11,62 @@
     'Puntarenas': ['Puntarenas', 'Esparza', 'Buenos Aires', 'Montes de Oro', 'Osa', 'Quepos', 'Golfito', 'Coto Brus', 'Parrita', 'Corredores', 'Garabito'],
     'Limón': ['Limón', 'Pococí', 'Siquirres', 'Talamanca', 'Matina', 'Guácimo'],
   };
+
+  // Approximate reference points (canton/province seat towns), used only to
+  // put a rough order on the WhatsApp route when a client's address link
+  // doesn't carry real coordinates. Not surveyed, not shown to the user as
+  // "the address" — just a coarse stand-in for straight-line distance sort.
+  const CANTON_CENTROIDS = {
+    'San José': { lat: 9.9281, lng: -84.0907 }, 'Escazú': { lat: 9.9189, lng: -84.1449 },
+    'Desamparados': { lat: 9.8975, lng: -84.0669 }, 'Puriscal': { lat: 9.8386, lng: -84.2994 },
+    'Tarrazú': { lat: 9.6431, lng: -84.0122 }, 'Aserrí': { lat: 9.8783, lng: -84.0667 },
+    'Mora': { lat: 9.9089, lng: -84.2214 }, 'Goicoechea': { lat: 9.9436, lng: -84.0578 },
+    'Santa Ana': { lat: 9.9280, lng: -84.1831 }, 'Alajuelita': { lat: 9.8961, lng: -84.1094 },
+    'Vázquez de Coronado': { lat: 9.9814, lng: -84.0392 }, 'Acosta': { lat: 9.7594, lng: -84.2214 },
+    'Tibás': { lat: 9.9636, lng: -84.0839 }, 'Moravia': { lat: 9.9639, lng: -84.0500 },
+    'Montes de Oca': { lat: 9.9364, lng: -84.0517 }, 'Turrubares': { lat: 9.8608, lng: -84.3925 },
+    'Dota': { lat: 9.6667, lng: -83.9333 }, 'Curridabat': { lat: 9.9167, lng: -84.0333 },
+    'Pérez Zeledón': { lat: 9.3717, lng: -83.7042 }, 'León Cortés': { lat: 9.6667, lng: -84.0333 },
+    'Alajuela': { lat: 10.0163, lng: -84.2115 }, 'San Ramón': { lat: 10.0930, lng: -84.4761 },
+    'Grecia': { lat: 10.0725, lng: -84.3128 }, 'San Mateo': { lat: 9.9500, lng: -84.4333 },
+    'Atenas': { lat: 9.9781, lng: -84.3800 }, 'Naranjo': { lat: 10.0975, lng: -84.3831 },
+    'Palmares': { lat: 10.0575, lng: -84.4344 }, 'Poás': { lat: 10.0925, lng: -84.2331 },
+    'Orotina': { lat: 9.9128, lng: -84.5814 }, 'San Carlos': { lat: 10.3236, lng: -84.4267 },
+    'Zarcero': { lat: 10.1858, lng: -84.3956 }, 'Sarchí': { lat: 10.0764, lng: -84.3506 },
+    'Upala': { lat: 10.8958, lng: -85.0111 }, 'Los Chiles': { lat: 11.0333, lng: -84.7167 },
+    'Guatuso': { lat: 10.7500, lng: -84.8333 }, 'Río Cuarto': { lat: 10.4667, lng: -84.2667 },
+    'Cartago': { lat: 9.8644, lng: -83.9194 }, 'Paraíso': { lat: 9.8419, lng: -83.8636 },
+    'La Unión': { lat: 9.9167, lng: -83.9833 }, 'Jiménez': { lat: 9.8667, lng: -83.7333 },
+    'Turrialba': { lat: 9.9078, lng: -83.6864 }, 'Alvarado': { lat: 9.9333, lng: -83.8000 },
+    'Oreamuno': { lat: 9.8833, lng: -83.8667 }, 'El Guarco': { lat: 9.8167, lng: -83.9333 },
+    'Heredia': { lat: 10.0028, lng: -84.1165 }, 'Barva': { lat: 10.0333, lng: -84.1167 },
+    'Santo Domingo': { lat: 9.9833, lng: -84.0917 }, 'Santa Bárbara': { lat: 10.0333, lng: -84.1500 },
+    'San Rafael': { lat: 10.0333, lng: -84.0833 }, 'San Isidro': { lat: 10.0333, lng: -84.0667 },
+    'Belén': { lat: 9.9833, lng: -84.1667 }, 'Flores': { lat: 10.0000, lng: -84.1167 },
+    'San Pablo': { lat: 9.9833, lng: -84.1167 }, 'Sarapiquí': { lat: 10.4667, lng: -84.0000 },
+    'Liberia': { lat: 10.6346, lng: -85.4407 }, 'Nicoya': { lat: 10.1483, lng: -85.4522 },
+    'Santa Cruz': { lat: 10.2667, lng: -85.5833 }, 'Bagaces': { lat: 10.5167, lng: -85.2500 },
+    'Carrillo': { lat: 10.4667, lng: -85.5667 }, 'Cañas': { lat: 10.4333, lng: -85.0833 },
+    'Abangares': { lat: 10.2167, lng: -84.9667 }, 'Tilarán': { lat: 10.4667, lng: -84.9667 },
+    'Nandayure': { lat: 9.9833, lng: -85.2333 }, 'La Cruz': { lat: 11.0833, lng: -85.6167 },
+    'Hojancha': { lat: 10.0167, lng: -85.3833 },
+    'Puntarenas': { lat: 9.9763, lng: -84.8384 }, 'Esparza': { lat: 9.9986, lng: -84.6608 },
+    'Buenos Aires': { lat: 9.1667, lng: -83.3333 }, 'Montes de Oro': { lat: 9.9333, lng: -84.7167 },
+    'Osa': { lat: 8.9667, lng: -83.5333 }, 'Quepos': { lat: 9.4319, lng: -84.1622 },
+    'Golfito': { lat: 8.6333, lng: -83.1667 }, 'Coto Brus': { lat: 8.8167, lng: -82.9667 },
+    'Parrita': { lat: 9.5167, lng: -84.3167 }, 'Corredores': { lat: 8.6333, lng: -82.9333 },
+    'Garabito': { lat: 9.6167, lng: -84.6167 },
+    'Limón': { lat: 9.9908, lng: -83.0347 }, 'Pococí': { lat: 10.2167, lng: -83.7833 },
+    'Siquirres': { lat: 10.1000, lng: -83.5000 }, 'Talamanca': { lat: 9.6167, lng: -82.8500 },
+    'Matina': { lat: 10.0000, lng: -83.2667 }, 'Guácimo': { lat: 10.2000, lng: -83.6833 },
+  };
+  const PROVINCE_CENTROIDS = {
+    'San José': { lat: 9.9281, lng: -84.0907 }, 'Alajuela': { lat: 10.0163, lng: -84.2115 },
+    'Cartago': { lat: 9.8644, lng: -83.9194 }, 'Heredia': { lat: 10.0028, lng: -84.1165 },
+    'Guanacaste': { lat: 10.6346, lng: -85.4407 }, 'Puntarenas': { lat: 9.9763, lng: -84.8384 },
+    'Limón': { lat: 9.9908, lng: -83.0347 },
+  };
+
   const RATE_PER_LB = 4.25;
   const PAGE_SIZE = 10;
   const WAITING_PAGE_SIZE = 8;
@@ -66,6 +122,66 @@
 
   function clientZoneLabel(c) {
     return [c.province, c.canton].filter(Boolean).join(' — ') || 'Sin zona';
+  }
+
+  // Costa Rica bounding box, used to reject false-positive number pairs
+  // (zoom levels, place IDs, etc.) picked up while scanning a URL for coords.
+  function extractLatLng(url) {
+    if (!url) return null;
+    const re = /(-?\d{1,2}\.\d{3,})(?:,|%2C|\s)+(-?\d{1,3}\.\d{3,})/gi;
+    let m;
+    while ((m = re.exec(url))) {
+      const lat = parseFloat(m[1]);
+      const lng = parseFloat(m[2]);
+      if (lat >= 5 && lat <= 12 && lng <= -81 && lng >= -87) return { lat, lng };
+    }
+    return null;
+  }
+
+  function haversineKm(a, b) {
+    const R = 6371;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLng = (b.lng - a.lng) * Math.PI / 180;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+
+  // Real coordinates from the link when present, else a coarse canton/province
+  // stand-in, else null (can't place this stop on the map at all).
+  function clientCoord(c) {
+    const fromLink = extractLatLng(c.address);
+    if (fromLink) return fromLink;
+    if (c.canton && CANTON_CENTROIDS[c.canton]) return CANTON_CENTROIDS[c.canton];
+    if (c.province && PROVINCE_CENTROIDS[c.province]) return PROVINCE_CENTROIDS[c.province];
+    return null;
+  }
+
+  // Greedy nearest-neighbor from the messenger's starting point — a coarse
+  // straight-line approximation of an optimized route, not real street
+  // routing. Stops we can't place anywhere (no coordinate at all) go last,
+  // in their original order, rather than being dropped.
+  function orderStopsByRoute(stops, originCoord) {
+    if (!originCoord) return stops;
+    const withCoord = [];
+    const withoutCoord = [];
+    stops.forEach((stop) => {
+      const coord = clientCoord(stop.c);
+      if (coord) withCoord.push({ stop, coord }); else withoutCoord.push(stop);
+    });
+    const ordered = [];
+    let current = originCoord;
+    const pool = withCoord.slice();
+    while (pool.length) {
+      let bestIdx = 0, bestDist = Infinity;
+      pool.forEach((item, i) => {
+        const d = haversineKm(current, item.coord);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+      });
+      const [chosen] = pool.splice(bestIdx, 1);
+      ordered.push(chosen.stop);
+      current = chosen.coord;
+    }
+    return ordered.concat(withoutCoord);
   }
 
   function scrollToForm(id) {
@@ -585,27 +701,36 @@
       const stops = [];
       entries.forEach(({ p, c }) => {
         let stop = stopsByClient.get(c.id);
-        if (!stop) { stop = { c, trackings: [] }; stopsByClient.set(c.id, stop); stops.push(stop); }
-        stop.trackings.push(p.tracking);
+        if (!stop) { stop = { c, packages: [] }; stopsByClient.set(c.id, stop); stops.push(stop); }
+        stop.packages.push(p);
       });
-      const lines = stops.map((stop, i) => {
+
+      // Order stops by straight-line distance from the messenger's starting
+      // point (extracted from their "punto de salida" link) — a coarse
+      // route approximation, not real street routing. If the origin link
+      // has no readable coordinates, stops stay in their original order.
+      const originCoord = extractLatLng(m.origin);
+      const orderedStops = orderStopsByRoute(stops, originCoord);
+
+      const lines = orderedStops.map((stop, i) => {
+        const trackings = stop.packages.map((p) => p.tracking);
         const detailLine = stop.c.addressDetails ? `\nDetalle: ${stop.c.addressDetails}` : '';
-        return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${stop.trackings.length}\nTracking: ${stop.trackings.join(', ')}`;
+        return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${trackings.length}\nTracking: ${trackings.join(', ')}`;
       });
       const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
 
-      const rows = entries.map(({ p, c }) => `
+      const rows = orderedStops.flatMap((stop) => stop.packages.map((p) => `
         <tr>
-          <td>${esc(c.name)}</td>
-          <td><a href="${esc(c.address)}" target="_blank" rel="noopener">Ver ubicación</a></td>
-          <td>${esc(c.phone)}</td>
+          <td>${esc(stop.c.name)}</td>
+          <td><a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a></td>
+          <td>${esc(stop.c.phone)}</td>
           <td>${esc(p.tracking)}</td>
           <td>$${fmtMoney(p.cost)}</td>
           <td style="text-align:right">
             <button class="btn btn-icon btn-ghost" type="button" data-action="unassign-pkg" data-id="${p.id}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">${ICONS.trash}</button>
           </td>
-        </tr>`).join('\n');
+        </tr>`)).join('\n');
 
       return `
         <div class="card elev-sm">
