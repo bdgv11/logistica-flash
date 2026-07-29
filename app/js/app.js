@@ -1095,7 +1095,13 @@
       case 'send-all-invoices': {
         let hrefs = [];
         try { hrefs = JSON.parse(el.dataset.hrefs || '[]'); } catch (err) { hrefs = []; }
-        hrefs.forEach((href, i) => setTimeout(() => window.open(href, '_blank'), i * 500));
+        // Every window.open() must fire synchronously inside this click
+        // handler — a browser only trusts pop-ups tied directly to the user
+        // gesture that triggered them. A setTimeout (even 0ms) breaks that
+        // link for every open after the first, which is why only one
+        // message was going out before: the rest were being silently
+        // blocked as pop-ups, not actually failing to build correctly.
+        hrefs.forEach((href) => window.open(href, '_blank'));
         return;
       }
 
