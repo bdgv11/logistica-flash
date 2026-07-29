@@ -83,8 +83,8 @@ h6 { font-size: 13px; }
 h6 { letter-spacing: 0.08em; text-transform: uppercase; }
 p { margin: 0 0 var(--space-3); }
 a { color: var(--color-accent); text-underline-offset: 3px; }
-a:not(.btn):not(.wa-btn) { color: var(--color-accent-700); }
-a:not(.btn):not(.wa-btn):hover { color: var(--color-accent-600); }
+a:not(.btn):not(.wa-btn):not(.navlink) { color: var(--color-accent-700); }
+a:not(.btn):not(.wa-btn):not(.navlink):hover { color: var(--color-accent-600); }
 img { display: block; max-width: 100%; }
 figure { margin: 0; }
 figcaption {
@@ -126,11 +126,14 @@ figcaption {
 .btn-icon { width: 36px; height: 36px; padding: 0; }
 .btn-block { width: 100%; margin-top: var(--space-2); justify-content: flex-start; text-align: left; }
 
-/* WhatsApp button — brand green, keeps its label + icon visible on hover
-   (the original prototype accidentally hid the label on hover; fixed here). */
-.wa-btn { transition: background .15s; }
-.wa-btn:hover { background: #1ea952 !important; }
-.wa-btn:active { background: #178a42 !important; }
+/* WhatsApp button — brand green, keeps its label + icon visible on hover.
+   Some buttons using this class are the "outline" variant (transparent
+   background, green text) — forcing white text on hover too, not just the
+   solid variant's, since green text on this same green hover background
+   is otherwise unreadable. */
+.wa-btn { transition: background .15s, color .15s; }
+.wa-btn:hover { background: #1ea952 !important; color: #ffffff !important; }
+.wa-btn:active { background: #178a42 !important; color: #ffffff !important; }
 
 /* — forms — */
 .field { margin-bottom: var(--space-3); }

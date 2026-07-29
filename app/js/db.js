@@ -36,6 +36,7 @@ window.LF = window.LF || {};
       clientId: row.client_id,
       arrived: !!row.arrived,
       assignedDate: row.assigned_date,
+      sent: !!row.sent,
     };
   }
 
@@ -133,6 +134,17 @@ window.LF = window.LF || {};
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
+    },
+
+    // Closes out everything currently showing in "Lista del día" — flips
+    // `sent` on every arrived-but-unsent package, so the list is empty and
+    // ready for the next batch whenever it's assembled (not tied to the
+    // calendar day, since routes don't necessarily go out daily).
+    async markRouteSent() {
+      const { error } = await sb().from('packages')
+        .update({ sent: true })
+        .eq('arrived', true).eq('sent', false);
+      throwIfError(error);
     },
 
     // ── settings ─────────────────────────────────────────────────────────

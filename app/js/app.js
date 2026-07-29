@@ -726,10 +726,14 @@
 
   // ── LISTA DEL DIA ────────────────────────────────────────────────────────
   function renderLista() {
-    const today = todayISO();
+    // Not tied to the calendar day — rutas here don't necessarily go out
+    // every day (some weeks it's twice), so what decides whether a package
+    // still belongs in this list is whether it's been marked "enviada" yet,
+    // not what date it happened to arrive on.
+    const anyPending = state.packages.some((p) => p.arrived && !p.sent);
     const cards = state.messengers.map((m) => {
       const entries = state.packages
-        .filter((p) => p.assignedDate === today)
+        .filter((p) => p.arrived && !p.sent)
         .map((p) => ({ p, c: clientById(p.clientId) }))
         .filter(({ c }) => c && c.province && m.zones.includes(c.province));
 
@@ -849,8 +853,13 @@
 
     return `
       <div>
-        <h1 style="margin-bottom:2px">Lista del día por mensajero</h1>
-        <p class="text-muted" style="margin-bottom:var(--space-6)">${esc(todayLabel())} — envía la ruta completa a cada mensajero en un solo mensaje.</p>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:var(--space-6)">
+          <div>
+            <h1 style="margin-bottom:2px">Lista del día por mensajero</h1>
+            <p class="text-muted" style="margin:0">${esc(todayLabel())} — envía la ruta completa a cada mensajero en un solo mensaje.</p>
+          </div>
+          <button type="button" class="btn btn-secondary" data-action="mark-route-sent" ${anyPending ? '' : 'disabled'}>Marcar como enviada — vaciar lista</button>
+        </div>
         <div style="display:flex;flex-direction:column;gap:var(--space-4)">${cards}</div>
       </div>`;
   }
@@ -1010,6 +1019,19 @@
     });
   }
 
+  function markRouteSent() {
+    askConfirm('Marcar como enviada', '¿Ya se envió y asignó todo lo de esta lista? Se vaciará para el siguiente día que armes rutas — esto no se puede deshacer desde aquí.', () => doMarkRouteSent(), 'Marcar como enviada');
+  }
+
+  async function doMarkRouteSent() {
+    await withBusy(async () => {
+      await LF.db.markRouteSent();
+      await reloadPackages();
+      state.invoiceQueue = null;
+      render();
+    });
+  }
+
   async function saveSettings(ratePerLb, crcRate) {
     await withBusy(async () => {
       state.settings = await LF.db.updateSettings({ ratePerLb, crcRate });
@@ -1105,6 +1127,7 @@
       }
 
       case 'unassign-pkg': return void unassignPkg(el.dataset.id);
+      case 'mark-route-sent': return void markRouteSent();
 
       case 'send-invoice': {
         const href = el.dataset.href;
