@@ -758,7 +758,9 @@
       const lines = orderedStops.map((stop, i) => {
         const trackings = stop.packages.map((p) => p.tracking);
         const detailLine = stop.c.addressDetails ? `\nDetalle: ${stop.c.addressDetails}` : '';
-        return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${trackings.length}\nTracking: ${trackings.join(', ')}`;
+        const stopCost = stop.packages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
+        const stopCostCRC = fmtCRC(stopCost * state.settings.crcRate);
+        return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${trackings.length}\nTracking: ${trackings.join(', ')}\nMonto a cobrar: ₡${stopCostCRC} ($${fmtMoney(stopCost)} USD)`;
       });
       const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
