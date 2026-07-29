@@ -11,6 +11,10 @@
   <link rel="stylesheet" href="_ds/modernist-3721ec76-bf2d-4dd4-9380-3837727260ee/styles.css">
   <script src="_ds/modernist-3721ec76-bf2d-4dd4-9380-3837727260ee/_ds_bundle.js"></script>
   <style>
+    a { color: var(--color-accent-700); }
+    a:hover { color: var(--color-accent); }
+  </style>
+  <style>
     :root {
       --color-bg: #f8f9fc;
       --color-surface: #eef1f7;
@@ -418,6 +422,11 @@
             <input class="input" type="tel" value="{{ messengerForm.phone }}" onChange="{{ setMessengerPhone }}" placeholder="Ej: 8888-1234">
           </div>
           <div class="field">
+            <label>Punto de salida — enlace de Waze o Google Maps *</label>
+            <input class="input" type="url" value="{{ messengerForm.origin }}" onChange="{{ setMessengerOrigin }}" placeholder="Ej: https://waze.com/ul/hd6... o https://maps.app.goo.gl/...">
+            <p class="text-muted" style="margin-top:4px;font-size:13px">Pega el link para compartir ubicación desde Waze o Google Maps.</p>
+          </div>
+          <div class="field">
             <label>Provincias que cubre</label>
             <div style="display:flex;flex-wrap:wrap;gap:10px">
               <sc-for list="{{ provinciaOptions }}" as="po" hint-placeholder-count="7">
@@ -439,7 +448,7 @@
         <div style="overflow-x:auto">
         <table class="table">
           <thead>
-            <tr><th>Nombre</th><th>Teléfono</th><th>Provincias</th><th></th></tr>
+            <tr><th>Nombre</th><th>Teléfono</th><th>Punto de salida</th><th>Provincias</th><th></th></tr>
           </thead>
           <tbody>
             <sc-for list="{{ messengers }}" as="m" hint-placeholder-count="3">
@@ -450,6 +459,14 @@
                   </sc-if>
                 </td>
                 <td>{{ m.phone }}</td>
+                <td>
+                  <sc-if value="{{ m.hasOrigin }}" hint-placeholder-val="{{ false }}">
+                    <a href="{{ m.origin }}" target="_blank" rel="noopener">Ver mapa</a>
+                  </sc-if>
+                  <sc-if value="{{ m.noOrigin }}" hint-placeholder-val="{{ false }}">
+                    <span class="text-muted">Sin ubicación</span>
+                  </sc-if>
+                </td>
                 <td><span class="tag tag-neutral">{{ m.zoneLabel }}</span></td>
                 <td style="text-align:right;white-space:nowrap">
                   <button class="btn btn-ghost" type="button" onClick="{{ m.onEdit }}">Editar</button>
@@ -493,9 +510,9 @@ function normalizeClientZone(zone) {
 function migrateData(data) {
   const clients = (data.clients || []).map(c => ({ ...c, zone: normalizeClientZone(c.zone) }));
   const messengers = (data.messengers || []).map(m => {
-    if (Array.isArray(m.zones)) return m;
+    if (Array.isArray(m.zones)) return { ...m, origin: m.origin || '' };
     const zones = LEGACY_ZONE_SPLIT[m.zone] || (m.zone && PROVINCIAS.includes(m.zone) ? [m.zone] : []);
-    return { id: m.id, name: m.name, phone: m.phone, zones };
+    return { id: m.id, name: m.name, phone: m.phone, origin: m.origin || '', zones };
   });
   const packages = (data.packages || []).map(p => ({
     ...p,
@@ -508,9 +525,9 @@ function migrateData(data) {
 function seedData() {
   const today = todayISO();
   const messengers = [
-    { id: 'msg1', name: 'Mensajero 1', phone: '8880-1111', zones: ['Heredia', 'Alajuela'] },
-    { id: 'msg2', name: 'Mensajero 2', phone: '8880-2222', zones: ['San José'] },
-    { id: 'msg3', name: 'Mensajero 3', phone: '8880-3333', zones: ['Cartago'] },
+    { id: 'msg1', name: 'Mensajero 1', phone: '8880-1111', origin: 'https://waze.com/ul/hd6', zones: ['Heredia', 'Alajuela'] },
+    { id: 'msg2', name: 'Mensajero 2', phone: '8880-2222', origin: 'https://maps.app.goo.gl/exampleSJ', zones: ['San José'] },
+    { id: 'msg3', name: 'Mensajero 3', phone: '8880-3333', origin: 'https://maps.app.goo.gl/exampleCartago', zones: ['Cartago'] },
   ];
   const clients = [
     { id: 'c1', name: 'María Fernández Solís', phone: '8888-1234', address: 'https://waze.com/ul/hd12345', zone: 'Heredia' },
@@ -556,7 +573,7 @@ class Component extends DCLogic {
     clients: [],
     packages: [],
     messengers: [],
-    messengerForm: { id: null, name: '', phone: '', zones: [] },
+    messengerForm: { id: null, name: '', phone: '', origin: '', zones: [] },
     clientForm: { id: null, name: '', phone: '', address: '', zone: '' },
     pkgDraft: { tracking: '', weight: '', cost: '' },
     editingPkgId: null,
@@ -609,25 +626,25 @@ class Component extends DCLogic {
 
   saveMessenger() {
     const f = this.state.messengerForm;
-    if (!f.name.trim() || !f.phone.trim()) return;
+    if (!f.name.trim() || !f.phone.trim() || !f.origin.trim()) return;
     this.setState(s => {
       let messengers;
       if (f.id) {
-        messengers = s.messengers.map(m => m.id === f.id ? { ...m, name: f.name.trim(), phone: f.phone.trim(), zones: f.zones } : m);
+        messengers = s.messengers.map(m => m.id === f.id ? { ...m, name: f.name.trim(), phone: f.phone.trim(), origin: f.origin.trim(), zones: f.zones } : m);
       } else {
-        messengers = [...s.messengers, { id: 'msg' + Date.now(), name: f.name.trim(), phone: f.phone.trim(), zones: f.zones }];
+        messengers = [...s.messengers, { id: 'msg' + Date.now(), name: f.name.trim(), phone: f.phone.trim(), origin: f.origin.trim(), zones: f.zones }];
       }
       this.persist({ clients: s.clients, packages: s.packages, messengers });
-      return { messengers, messengerForm: { id: null, name: '', phone: '', zones: [] } };
+      return { messengers, messengerForm: { id: null, name: '', phone: '', origin: '', zones: [] } };
     });
   }
 
   startEditMessenger(m) {
-    this.setState({ messengerForm: { id: m.id, name: m.name, phone: m.phone, zones: [...m.zones] } });
+    this.setState({ messengerForm: { id: m.id, name: m.name, phone: m.phone, origin: m.origin || '', zones: [...m.zones] } });
   }
 
   cancelEditMessenger() {
-    this.setState({ messengerForm: { id: null, name: '', phone: '', zones: [] } });
+    this.setState({ messengerForm: { id: null, name: '', phone: '', origin: '', zones: [] } });
   }
 
   deleteMessenger(id) {
@@ -863,6 +880,7 @@ class Component extends DCLogic {
 
     const messengers = s.messengers.map(m => ({
       ...m, zoneLabel: m.zones.join(', ') || 'Sin zona', incomplete: m.zones.length === 0,
+      hasOrigin: !!(m.origin && m.origin.trim()), noOrigin: !(m.origin && m.origin.trim()),
       onEdit: () => this.startEditMessenger(m),
       onDelete: () => this.deleteMessenger(m.id),
     }));
@@ -884,6 +902,7 @@ class Component extends DCLogic {
       messengerForm: s.messengerForm,
       setMessengerName: (e) => this.setMessengerField('name', e),
       setMessengerPhone: (e) => this.setMessengerField('phone', e),
+      setMessengerOrigin: (e) => this.setMessengerField('origin', e),
       provinciaOptions: PROVINCIAS.map(p => {
         const checked = s.messengerForm.zones.includes(p);
         return {

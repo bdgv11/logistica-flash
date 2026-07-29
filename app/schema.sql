@@ -1,6 +1,10 @@
 -- Logística Flash — Supabase schema
 -- Run this once in the Supabase SQL Editor (Project > SQL Editor > New query) for a fresh project.
 -- Safe to re-run: every statement is idempotent (IF NOT EXISTS / OR REPLACE / DROP ... IF EXISTS).
+-- This also means it doubles as a migration script — if you already ran an older
+-- version of this file and later columns get added (like `messengers.origin`
+-- below), just re-run the whole file again on your existing database. Nothing
+-- gets dropped or overwritten; only what's missing gets added.
 
 create extension if not exists pgcrypto;
 
@@ -9,9 +13,11 @@ create table if not exists public.messengers (
   id         uuid primary key default gen_random_uuid(),
   name       text not null,
   phone      text not null,
+  origin     text not null default '',
   zones      text[] not null default '{}',
   created_at timestamptz not null default now()
 );
+alter table public.messengers add column if not exists origin text not null default '';
 
 -- ── clients ──────────────────────────────────────────────────────────────────
 create table if not exists public.clients (
@@ -97,10 +103,10 @@ create policy "authenticated delete packages" on public.packages for delete to a
 -- Uncomment to preload the same example data the design prototype shipped with.
 -- Safe to run once on an empty database only (it doesn't check for existing rows).
 --
--- insert into public.messengers (name, phone, zones) values
---   ('Mensajero 1', '8880-1111', array['Heredia','Alajuela']),
---   ('Mensajero 2', '8880-2222', array['San José']),
---   ('Mensajero 3', '8880-3333', array['Cartago']);
+-- insert into public.messengers (name, phone, origin, zones) values
+--   ('Mensajero 1', '8880-1111', 'https://waze.com/ul/hd6', array['Heredia','Alajuela']),
+--   ('Mensajero 2', '8880-2222', 'https://maps.app.goo.gl/exampleSJ', array['San José']),
+--   ('Mensajero 3', '8880-3333', 'https://maps.app.goo.gl/exampleCartago', array['Cartago']);
 --
 -- insert into public.clients (name, phone, address, zone) values
 --   ('María Fernández Solís', '8888-1234', 'https://waze.com/ul/hd12345', 'Heredia'),

@@ -16,7 +16,7 @@ window.LF = window.LF || {};
   }
 
   function mapMessenger(row) {
-    return { id: row.id, name: row.name, phone: row.phone, zones: Array.isArray(row.zones) ? row.zones : [] };
+    return { id: row.id, name: row.name, phone: row.phone, origin: row.origin || '', zones: Array.isArray(row.zones) ? row.zones : [] };
   }
 
   function mapPackage(row) {
@@ -67,17 +67,17 @@ window.LF = window.LF || {};
       return data.map(mapMessenger);
     },
 
-    async createMessenger({ name, phone, zones }) {
+    async createMessenger({ name, phone, origin, zones }) {
       const { data, error } = await sb().from('messengers')
-        .insert({ name, phone, zones: zones || [] })
+        .insert({ name, phone, origin: origin || '', zones: zones || [] })
         .select().single();
       throwIfError(error);
       return mapMessenger(data);
     },
 
-    async updateMessenger(id, { name, phone, zones }) {
+    async updateMessenger(id, { name, phone, origin, zones }) {
       const { data, error } = await sb().from('messengers')
-        .update({ name, phone, zones: zones || [] })
+        .update({ name, phone, origin: origin || '', zones: zones || [] })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapMessenger(data);

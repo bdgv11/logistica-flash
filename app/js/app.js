@@ -16,7 +16,7 @@
     clientDraft: { name: '', phone: '', address: '', zone: '' },
     messengerEditingId: null,
     messengerZonesDraft: [],
-    messengerDraft: { name: '', phone: '' },
+    messengerDraft: { name: '', phone: '', origin: '' },
     pkgEditingId: null,
     pkgSelectedClientId: null,
     pkgDraft: { tracking: '', weight: '', cost: '' },
@@ -532,10 +532,12 @@
 
     const rows = state.messengers.map((m) => {
       const incomplete = m.zones.length === 0;
+      const hasOrigin = !!(m.origin && m.origin.trim());
       return `
         <tr>
           <td>${esc(m.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Sin zona</span>' : ''}</td>
           <td>${esc(m.phone)}</td>
+          <td>${hasOrigin ? `<a href="${esc(m.origin)}" target="_blank" rel="noopener">Ver mapa</a>` : `<span class="text-muted">Sin ubicación</span>`}</td>
           <td><span class="tag tag-neutral">${esc(m.zones.join(', ') || 'Sin zona')}</span></td>
           <td style="text-align:right;white-space:nowrap">
             <button class="btn btn-ghost" type="button" data-action="edit-messenger" data-id="${m.id}">Editar</button>
@@ -559,6 +561,11 @@
             <input class="input" id="messenger-phone" type="tel" value="${esc(f.phone)}" placeholder="Ej: 8888-1234">
           </div>
           <div class="field">
+            <label>Punto de salida — enlace de Waze o Google Maps *</label>
+            <input class="input" id="messenger-origin" type="url" value="${esc(f.origin)}" placeholder="Ej: https://waze.com/ul/hd6... o https://maps.app.goo.gl/...">
+            <p class="text-muted" style="margin-top:4px;font-size:13px">Pega el link para compartir ubicación desde Waze o Google Maps.</p>
+          </div>
+          <div class="field">
             <label>Provincias que cubre</label>
             <div style="display:flex;flex-wrap:wrap;gap:10px">${chips}</div>
           </div>
@@ -573,7 +580,7 @@
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Mensajeros (${state.messengers.length})</h4>
         <div class="table-scroll">
           <table class="table">
-            <thead><tr><th>Nombre</th><th>Teléfono</th><th>Provincias</th><th></th></tr></thead>
+            <thead><tr><th>Nombre</th><th>Teléfono</th><th>Punto de salida</th><th>Provincias</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -586,7 +593,7 @@
     state.tab = tab;
     if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', zone: '' }; }
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '' }; }
-    if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '' }; }
+    if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; }
     render();
     if (tab === 'paquete') renderWaitingList();
   }
@@ -662,18 +669,19 @@
   async function saveMessenger() {
     const name = document.getElementById('messenger-name').value;
     const phone = document.getElementById('messenger-phone').value;
+    const origin = document.getElementById('messenger-origin').value;
     const zones = state.messengerZonesDraft;
-    if (!name.trim() || !phone.trim()) return;
+    if (!name.trim() || !phone.trim() || !origin.trim()) return;
     await withBusy(async () => {
       if (state.messengerEditingId) {
-        await LF.db.updateMessenger(state.messengerEditingId, { name: name.trim(), phone: phone.trim(), zones });
+        await LF.db.updateMessenger(state.messengerEditingId, { name: name.trim(), phone: phone.trim(), origin: origin.trim(), zones });
       } else {
-        await LF.db.createMessenger({ name: name.trim(), phone: phone.trim(), zones });
+        await LF.db.createMessenger({ name: name.trim(), phone: phone.trim(), origin: origin.trim(), zones });
       }
       await reloadMessengers();
       state.messengerEditingId = null;
       state.messengerZonesDraft = [];
-      state.messengerDraft = { name: '', phone: '' };
+      state.messengerDraft = { name: '', phone: '', origin: '' };
       render();
     });
   }
@@ -748,12 +756,12 @@
         const m = state.messengers.find((x) => x.id === el.dataset.id);
         if (!m) return;
         state.messengerEditingId = m.id; state.messengerZonesDraft = [...m.zones];
-        state.messengerDraft = { name: m.name, phone: m.phone };
+        state.messengerDraft = { name: m.name, phone: m.phone, origin: m.origin || '' };
         render(); return;
       }
       case 'cancel-edit-messenger':
         state.messengerEditingId = null; state.messengerZonesDraft = [];
-        state.messengerDraft = { name: '', phone: '' };
+        state.messengerDraft = { name: '', phone: '', origin: '' };
         render(); return;
       case 'save-messenger': return void saveMessenger();
       case 'delete-messenger': return void deleteMessenger(el.dataset.id);
@@ -796,6 +804,7 @@
     if (id === 'client-zone') { state.clientDraft.zone = e.target.value; return; }
     if (id === 'messenger-name') { state.messengerDraft.name = e.target.value; return; }
     if (id === 'messenger-phone') { state.messengerDraft.phone = e.target.value; return; }
+    if (id === 'messenger-origin') { state.messengerDraft.origin = e.target.value; return; }
   });
 
   document.body.addEventListener('change', (e) => {
