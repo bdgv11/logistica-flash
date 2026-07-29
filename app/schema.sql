@@ -60,6 +60,19 @@ create table if not exists public.packages (
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);
 
+-- ── app settings ─────────────────────────────────────────────────────────────
+-- Single shared row (id = 1) so cost calculations (Registrar paquete, Lista
+-- del día, facturas) read from one place both admins can edit, instead of a
+-- hardcoded rate. Never insert or delete a second row.
+create table if not exists public.app_settings (
+  id          int primary key default 1,
+  rate_per_lb numeric(10,2) not null default 4.25,
+  crc_rate    numeric(10,2) not null default 525,
+  updated_at  timestamptz not null default now(),
+  constraint app_settings_singleton check (id = 1)
+);
+insert into public.app_settings (id) values (1) on conflict (id) do nothing;
+
 -- When a client is deleted, its packages fall back to "sin identificar" instead
 -- of silently keeping a stale "assigned today" date with no client attached.
 create or replace function public.clear_assigned_date_on_client_delete()
@@ -84,9 +97,10 @@ for each row execute function public.clear_assigned_date_on_client_delete();
 -- user shares the exact same data — there's no per-row ownership in this app, so
 -- policies simply require "you are logged in" for every operation.
 
-alter table public.messengers enable row level security;
-alter table public.clients    enable row level security;
-alter table public.packages   enable row level security;
+alter table public.messengers   enable row level security;
+alter table public.clients      enable row level security;
+alter table public.packages     enable row level security;
+alter table public.app_settings enable row level security;
 
 drop policy if exists "authenticated read messengers"   on public.messengers;
 drop policy if exists "authenticated write messengers"  on public.messengers;
@@ -114,6 +128,11 @@ create policy "authenticated read packages"   on public.packages for select to a
 create policy "authenticated write packages"  on public.packages for insert to authenticated with check (true);
 create policy "authenticated update packages" on public.packages for update to authenticated using (true) with check (true);
 create policy "authenticated delete packages" on public.packages for delete to authenticated using (true);
+
+drop policy if exists "authenticated read settings"   on public.app_settings;
+drop policy if exists "authenticated update settings" on public.app_settings;
+create policy "authenticated read settings"   on public.app_settings for select to authenticated using (true);
+create policy "authenticated update settings" on public.app_settings for update to authenticated using (true) with check (true);
 
 -- ── Optional: sample data ────────────────────────────────────────────────────
 -- Uncomment to preload the same example data the design prototype shipped with.

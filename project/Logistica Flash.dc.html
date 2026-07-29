@@ -88,6 +88,7 @@
     <a href="#" class="navlink" onClick="{{ goPaquete }}" aria-current="{{ ariaPaquete }}">Registrar paquete</a>
     <a href="#" class="navlink" onClick="{{ goLista }}" aria-current="{{ ariaLista }}">Lista del día</a>
     <a href="#" class="navlink" onClick="{{ goMensajeros }}" aria-current="{{ ariaMensajeros }}">Mensajeros</a>
+    <a href="#" class="navlink" onClick="{{ goConfig }}" aria-current="{{ ariaConfig }}">Configuración</a>
     <a href="#" class="navlink" onClick="{{ doLogout }}">Salir</a>
   </div>
 
@@ -288,6 +289,9 @@
           <div class="field">
             <label>Costo estimado (${{ ratePerLb }}/lb) — editable</label>
             <input class="input" type="number" step="0.01" min="0" value="{{ pkgDraft.cost }}" onChange="{{ setCost }}" placeholder="0.00">
+            <sc-if value="{{ hasPkgCost }}" hint-placeholder-val="{{ false }}">
+              <p class="text-muted" style="margin-top:4px;font-size:13px">≈ ₡{{ pkgCostCRC }}</p>
+            </sc-if>
           </div>
 
           <sc-if value="{{ noSelection }}" hint-placeholder-val="{{ true }}">
@@ -344,7 +348,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap;gap:8px">
             <div>
               <strong style="font-family:var(--font-heading)">{{ w.clientName }}</strong>
-              <span class="text-muted" style="margin-left:8px">{{ w.tracking }} · {{ w.weight }} lb · ${{ w.cost }}</span>
+              <span class="text-muted" style="margin-left:8px">{{ w.tracking }} · {{ w.weight }} lb · ${{ w.cost }} · ₡{{ w.costCRC }}</span>
               <span class="tag tag-neutral" style="margin-left:8px">{{ w.messengerName }}</span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -387,7 +391,7 @@
               <div style="overflow-x:auto">
               <table class="table" style="margin-top:var(--space-2);min-width:640px">
                 <thead>
-                  <tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo</th><th></th></tr>
+                  <tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo ($)</th><th>Costo (₡)</th><th style="text-align:right">Acciones</th></tr>
                 </thead>
                 <tbody>
                   <sc-for list="{{ d.entries }}" as="e" hint-placeholder-count="2">
@@ -397,10 +401,16 @@
                       <td>{{ e.phone }}</td>
                       <td>{{ e.tracking }}</td>
                       <td>${{ e.cost }}</td>
+                      <td>₡{{ e.costCRC }}</td>
                       <td style="text-align:right">
-                        <button class="btn btn-icon btn-ghost" type="button" onClick="{{ e.onRemove }}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                        </button>
+                        <div style="display:inline-flex;gap:6px">
+                          <button class="btn btn-icon btn-ghost" type="button" onClick="{{ e.onSendInvoice }}" aria-label="Enviar factura por WhatsApp" title="Enviar factura por WhatsApp" disabled="{{ e.noPhone }}" style="color:#25D366">
+                            <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>
+                          </button>
+                          <button class="btn btn-icon btn-ghost" type="button" onClick="{{ e.onRemove }}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   </sc-for>
@@ -409,6 +419,7 @@
                   <tr>
                     <td colspan="4" style="text-align:right;font-family:var(--font-heading);font-weight:800">Total a cobrar en esta ruta</td>
                     <td style="text-align:right;font-family:var(--font-heading);font-weight:800">${{ d.totalCost }}</td>
+                    <td style="text-align:right;font-family:var(--font-heading);font-weight:800">₡{{ d.totalCostCRC }}</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -417,10 +428,16 @@
               <sc-if value="{{ d.empty }}" hint-placeholder-val="{{ false }}">
                 <p class="text-muted" style="margin-top:var(--space-2)">Sin paquetes asignados hoy.</p>
               </sc-if>
-              <a href="{{ d.whatsappHref }}" target="_blank" rel="noopener" class="wa-btn" style="margin-top:var(--space-3);width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none" style-hover="background:#1ea952">
-                <svg width="18" height="18" viewBox="0 0 32 32" fill="#ffffff" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>
-                <span>Enviar lista por WhatsApp</span>
-              </a>
+              <div style="margin-top:var(--space-3);display:flex;flex-wrap:wrap;gap:10px">
+                <a href="{{ d.whatsappHref }}" target="_blank" rel="noopener" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none" style-hover="background:#1ea952">
+                  <svg width="18" height="18" viewBox="0 0 32 32" fill="#ffffff" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>
+                  <span>Enviar lista por WhatsApp</span>
+                </a>
+                <button type="button" onClick="{{ d.onSendAllInvoices }}" disabled="{{ d.empty }}" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)" style-hover="background:color-mix(in srgb, #25D366 12%, transparent)">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg>
+                  <span>Enviar facturas a clientes</span>
+                </button>
+              </div>
             </div>
           </sc-for>
         </div>
@@ -508,6 +525,27 @@
       </div>
     </sc-if>
 
+    <!-- ===== CONFIGURACIÓN ===== -->
+    <sc-if value="{{ isConfig }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <h1 style="margin-bottom:2px">Configuración</h1>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Estos valores se usan para calcular el costo de todos los paquetes en la app.</p>
+
+        <div class="card elev-sm" style="max-width:480px">
+          <div class="field">
+            <label>Peso por libra ($/lb)</label>
+            <input class="input" type="number" step="0.01" min="0" value="{{ settings.ratePerLb }}" onChange="{{ setRatePerLb }}" placeholder="Ej: 4.25">
+            <p class="text-muted" style="margin-top:4px;font-size:13px">Se usa para calcular el costo estimado al registrar un paquete.</p>
+          </div>
+          <div class="field">
+            <label>Tipo de cambio (₡ por $)</label>
+            <input class="input" type="number" step="1" min="0" value="{{ settings.crcRate }}" onChange="{{ setCrcRate }}" placeholder="Ej: 525">
+            <p class="text-muted" style="margin-top:4px;font-size:13px">Se usa para mostrar los costos en colones en las listas y facturas.</p>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
   </div>
 </div>
 </sc-if>
@@ -532,7 +570,8 @@ const STORE_KEY = 'logisticaFlash_v2';
 const AUTH_KEY = 'logisticaFlash_auth';
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'flash2026';
-const RATE_PER_LB = 4.25;
+const DEFAULT_RATE_PER_LB = 4.25;
+const DEFAULT_CRC_RATE = 525; // colones por dólar (ajustable)
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function messengerForZone(zone, messengers) { return zone ? (messengers.find(m => Array.isArray(m.zones) && m.zones.includes(zone)) || null) : null; }
@@ -563,10 +602,11 @@ function migrateData(data) {
   });
   const packages = (data.packages || []).map(p => ({
     ...p,
-    cost: typeof p.cost === 'number' ? p.cost : Math.round(p.weight * RATE_PER_LB * 100) / 100,
+    cost: typeof p.cost === 'number' ? p.cost : Math.round(p.weight * DEFAULT_RATE_PER_LB * 100) / 100,
     arrived: typeof p.arrived === 'boolean' ? p.arrived : !!p.clientId,
   }));
-  return { clients, packages, messengers };
+  const settings = { ratePerLb: (data.settings && data.settings.ratePerLb) || DEFAULT_RATE_PER_LB, crcRate: (data.settings && data.settings.crcRate) || DEFAULT_CRC_RATE };
+  return { clients, packages, messengers, settings };
 }
 
 function seedData() {
@@ -605,13 +645,13 @@ function seedData() {
       id: 'pk' + (100 + i),
       tracking: 'TBA9124' + (10000 + i * 7),
       weight,
-      cost: Math.round(weight * RATE_PER_LB * 100) / 100,
+      cost: Math.round(weight * DEFAULT_RATE_PER_LB * 100) / 100,
       clientId: clientCycle[i % clientCycle.length],
       arrived: false,
       assignedDate: null,
     });
   }
-  return { clients, packages, messengers };
+  return { clients, packages, messengers, settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE } };
 }
 
 class Component extends DCLogic {
@@ -634,6 +674,7 @@ class Component extends DCLogic {
     clients: [],
     packages: [],
     messengers: [],
+    settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE },
     messengerForm: { id: null, name: '', phone: '', origin: '', zones: [] },
     clientForm: { id: null, name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
     pkgDraft: { tracking: '', weight: '', cost: '' },
@@ -672,7 +713,17 @@ class Component extends DCLogic {
     const clients = data && data.clients ? data.clients : this.state.clients;
     const packages = data && data.packages ? data.packages : this.state.packages;
     const messengers = data && data.messengers ? data.messengers : this.state.messengers;
-    try { localStorage.setItem(STORE_KEY, JSON.stringify({ clients, packages, messengers })); } catch (e) {}
+    const settings = data && data.settings ? data.settings : this.state.settings;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ clients, packages, messengers, settings })); } catch (e) {}
+  }
+
+  setSettingsField(field, e) {
+    const raw = e.target.value;
+    this.setState(s => {
+      const settings = { ...s.settings, [field]: raw === '' ? '' : parseFloat(raw) };
+      this.persist({ clients: s.clients, packages: s.packages, messengers: s.messengers, settings });
+      return { settings };
+    });
   }
 
   setMessengerField(field, e) {
@@ -826,14 +877,14 @@ class Component extends DCLogic {
 
   setWeightField(e) {
     const w = e.target.value;
-    this.setState(s => ({ pkgDraft: { ...s.pkgDraft, weight: w, cost: w ? (parseFloat(w) * RATE_PER_LB).toFixed(2) : '' } }));
+    this.setState(s => ({ pkgDraft: { ...s.pkgDraft, weight: w, cost: w ? (parseFloat(w) * s.settings.ratePerLb).toFixed(2) : '' } }));
   }
 
   saveFormPkg() {
     const { tracking, weight, cost } = this.state.pkgDraft;
     const { editingPkgId, selectedClientId } = this.state;
     if (!tracking.trim() || !weight || !selectedClientId) return;
-    const finalCost = cost ? parseFloat(cost) : parseFloat(weight) * RATE_PER_LB;
+    const finalCost = cost ? parseFloat(cost) : parseFloat(weight) * this.state.settings.ratePerLb;
     this.setState(s => {
       let packages;
       if (editingPkgId) {
@@ -944,6 +995,7 @@ class Component extends DCLogic {
       const mm = c ? messengerForZone(c.province, s.messengers) : null;
       return {
         id: p.id, tracking: p.tracking, weight: p.weight, cost: p.cost,
+        costCRC: Math.round(p.cost * s.settings.crcRate).toLocaleString('es-CR'),
         clientName: c ? c.name : 'Cliente eliminado', messengerName: mm ? mm.name : 'Sin mensajero',
         onArrive: () => this.markArrived(p.id),
         onEdit: () => this.startEditPkg(p),
@@ -965,14 +1017,25 @@ class Component extends DCLogic {
         .filter(p => p.assignedDate === today)
         .map(p => ({ p, c: s.clients.find(cl => cl.id === p.clientId) }))
         .filter(x => x.c && x.c.province && m.zones.includes(x.c.province))
-        .map(x => ({ id: x.p.id, name: x.c.name, address: x.c.address, phone: x.c.phone, tracking: x.p.tracking, cost: x.p.cost, onRemove: () => this.unassignPackage(x.p.id) }));
+        .map(x => ({ id: x.p.id, name: x.c.name, address: x.c.address, phone: x.c.phone, tracking: x.p.tracking, cost: x.p.cost, weight: x.p.weight, onRemove: () => this.unassignPackage(x.p.id) }))
+        .map(e => {
+          const costCRCNum = Math.round(e.cost * s.settings.crcRate);
+          const costCRC = costCRCNum.toLocaleString('es-CR');
+          const hasPhone = !!(e.phone && e.phone.trim());
+          const invoiceMsg = `Hola ${e.name}, aquí el detalle de tu paquete:\n\nTracking: ${e.tracking}\nPeso: ${e.weight} lb\nTotal a pagar: ₡${costCRC} ($${e.cost} USD)\n\nGracias por confiar en Logística Flash.`;
+          return { ...e, costCRC, costCRCNum, noPhone: !hasPhone, invoiceHref: `https://wa.me/${waPhone(e.phone)}?text=${encodeURIComponent(invoiceMsg)}`, onSendInvoice: () => hasPhone && window.open(`https://wa.me/${waPhone(e.phone)}?text=${encodeURIComponent(invoiceMsg)}`, '_blank') };
+        });
       const totalCost = entries.reduce((sum, e) => sum + (parseFloat(e.cost) || 0), 0).toFixed(2);
+      const totalCostCRC = entries.reduce((sum, e) => sum + (e.costCRCNum || 0), 0).toLocaleString('es-CR');
       const zoneLabel = m.zones.join(', ') || 'Sin zona asignada';
       const lines = entries.map((e, i) => `${i + 1}. ${e.name}\nDireccion: ${e.address}\nTelefono: ${e.phone}\nTracking: ${e.tracking}`);
       const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
       return {
-        id: m.id, name: m.name, zone: zoneLabel, count: entries.length, entries, empty: entries.length === 0, totalCost,
+        id: m.id, name: m.name, zone: zoneLabel, count: entries.length, entries, empty: entries.length === 0, totalCost, totalCostCRC,
         whatsappHref: `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`,
+        onSendAllInvoices: () => {
+          entries.filter(e => !e.noPhone).forEach((e, i) => setTimeout(() => window.open(e.invoiceHref, '_blank'), i * 500));
+        },
       };
     });
 
@@ -986,17 +1049,22 @@ class Component extends DCLogic {
     return {
       confirmOpen: s.confirmOpen, confirmTitle: s.confirmTitle, confirmMessage: s.confirmMessage, confirmActionLabel: s.confirmActionLabel,
       cancelConfirm: () => this.cancelConfirm(), acceptConfirm: () => this.acceptConfirm(),
-      isInicio: s.tab === 'inicio', isClientes: s.tab === 'clientes', isPaquete: s.tab === 'paquete', isLista: s.tab === 'lista', isMensajeros: s.tab === 'mensajeros',
+      isInicio: s.tab === 'inicio', isClientes: s.tab === 'clientes', isPaquete: s.tab === 'paquete', isLista: s.tab === 'lista', isMensajeros: s.tab === 'mensajeros', isConfig: s.tab === 'config',
       ariaHome: s.tab === 'inicio' ? 'page' : undefined,
       ariaClientes: s.tab === 'clientes' ? 'page' : undefined,
       ariaPaquete: s.tab === 'paquete' ? 'page' : undefined,
       ariaLista: s.tab === 'lista' ? 'page' : undefined,
       ariaMensajeros: s.tab === 'mensajeros' ? 'page' : undefined,
+      ariaConfig: s.tab === 'config' ? 'page' : undefined,
       goHome: (e) => { e.preventDefault(); this.setTab('inicio'); },
       goClientes: (e) => { e.preventDefault(); this.goToClientes(); },
       goPaquete: (e) => { e.preventDefault(); this.setTab('paquete'); },
       goLista: (e) => { e.preventDefault(); this.setTab('lista'); },
       goMensajeros: (e) => { e.preventDefault(); this.setTab('mensajeros'); },
+      goConfig: (e) => { e.preventDefault(); this.setTab('config'); },
+      settings: s.settings,
+      setRatePerLb: (e) => this.setSettingsField('ratePerLb', e),
+      setCrcRate: (e) => this.setSettingsField('crcRate', e),
 
       messengerFormTitle: s.messengerForm.id ? 'Editar mensajero' : 'Agregar mensajero',
       messengerForm: s.messengerForm,
@@ -1049,7 +1117,9 @@ class Component extends DCLogic {
       nextClientsPage: () => this.setClientsPage(Math.min(clientsTotalPages, clientsPageClamped + 1)),
 
       pkgDraft: s.pkgDraft,
-      ratePerLb: RATE_PER_LB,
+      ratePerLb: s.settings.ratePerLb,
+      pkgCostCRC: s.pkgDraft.cost ? Math.round(parseFloat(s.pkgDraft.cost) * s.settings.crcRate).toLocaleString('es-CR') : null,
+      hasPkgCost: !!s.pkgDraft.cost,
       setTracking: (e) => this.setPkgDraftField('tracking', e),
       setWeight: (e) => this.setWeightField(e),
       setCost: (e) => this.setPkgDraftField('cost', e),

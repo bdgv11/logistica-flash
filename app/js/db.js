@@ -23,6 +23,10 @@ window.LF = window.LF || {};
     return { id: row.id, name: row.name, phone: row.phone, origin: row.origin || '', zones: Array.isArray(row.zones) ? row.zones : [] };
   }
 
+  function mapSettings(row) {
+    return { ratePerLb: Number(row.rate_per_lb), crcRate: Number(row.crc_rate) };
+  }
+
   function mapPackage(row) {
     return {
       id: row.id,
@@ -129,6 +133,21 @@ window.LF = window.LF || {};
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
+    },
+
+    // ── settings ─────────────────────────────────────────────────────────
+    async getSettings() {
+      const { data, error } = await sb().from('app_settings').select('*').eq('id', 1).single();
+      throwIfError(error);
+      return mapSettings(data);
+    },
+
+    async updateSettings({ ratePerLb, crcRate }) {
+      const { data, error } = await sb().from('app_settings')
+        .update({ rate_per_lb: ratePerLb, crc_rate: crcRate, updated_at: new Date().toISOString() })
+        .eq('id', 1).select().single();
+      throwIfError(error);
+      return mapSettings(data);
     },
   };
 })();

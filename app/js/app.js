@@ -67,7 +67,8 @@
     'Limón': { lat: 9.9908, lng: -83.0347 },
   };
 
-  const RATE_PER_LB = 4.25;
+  const DEFAULT_RATE_PER_LB = 4.25;
+  const DEFAULT_CRC_RATE = 525;
   const PAGE_SIZE = 10;
   const WAITING_PAGE_SIZE = 8;
 
@@ -76,6 +77,7 @@
     clients: [],
     messengers: [],
     packages: [],
+    settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE },
     clientsPage: 1,
     clientEditingId: null,
     clientDraft: { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
@@ -199,6 +201,8 @@
 
   function fmtMoney(n) { return Number(n || 0).toFixed(2); }
 
+  function fmtCRC(n) { return Math.round(Number(n) || 0).toLocaleString('es-CR'); }
+
   async function withBusy(fn) {
     if (state.busy) return;
     state.busy = true;
@@ -215,11 +219,12 @@
   async function reloadClients() { state.clients = await LF.db.listClients(); }
   async function reloadMessengers() { state.messengers = await LF.db.listMessengers(); }
   async function reloadPackages() { state.packages = await LF.db.listPackages(); }
+  async function reloadSettings() { state.settings = await LF.db.getSettings(); }
   async function reloadAll() {
-    const [clients, messengers, packages] = await Promise.all([
-      LF.db.listClients(), LF.db.listMessengers(), LF.db.listPackages(),
+    const [clients, messengers, packages, settings] = await Promise.all([
+      LF.db.listClients(), LF.db.listMessengers(), LF.db.listPackages(), LF.db.getSettings(),
     ]);
-    state.clients = clients; state.messengers = messengers; state.packages = packages;
+    state.clients = clients; state.messengers = messengers; state.packages = packages; state.settings = settings;
   }
 
   // ── icons ────────────────────────────────────────────────────────────────
@@ -230,6 +235,8 @@
     edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>',
     trash: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
     whatsapp: '<svg width="18" height="18" viewBox="0 0 32 32" fill="#ffffff" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>',
+    whatsappMono: '<svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>',
+    invoice: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg>',
   };
 
   // ── DOM roots ────────────────────────────────────────────────────────────
@@ -335,7 +342,7 @@
   // ── nav ──────────────────────────────────────────────────────────────────
   const TABS = [
     ['inicio', 'Inicio'], ['clientes', 'Clientes'], ['paquete', 'Registrar paquete'],
-    ['lista', 'Lista del día'], ['mensajeros', 'Mensajeros'],
+    ['lista', 'Lista del día'], ['mensajeros', 'Mensajeros'], ['config', 'Configuración'],
   ];
   function renderNav() {
     const links = TABS.map(([id, label]) =>
@@ -358,8 +365,32 @@
       case 'paquete': return renderPaquete();
       case 'lista': return renderLista();
       case 'mensajeros': return renderMensajeros();
+      case 'config': return renderConfig();
       default: return renderInicio();
     }
+  }
+
+  // ── CONFIGURACIÓN ────────────────────────────────────────────────────────
+  function renderConfig() {
+    const s = state.settings;
+    return `
+      <div>
+        <h1 style="margin-bottom:2px">Configuración</h1>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Estos valores se usan para calcular el costo de todos los paquetes en la app.</p>
+
+        <div class="card elev-sm" style="max-width:480px">
+          <div class="field">
+            <label>Costo por libra ($/lb)</label>
+            <input class="input" id="settings-rate-per-lb" type="number" step="0.01" min="0" value="${esc(s.ratePerLb)}">
+            <p class="text-muted" style="margin-top:4px;font-size:13px">Se usa para calcular el costo estimado al registrar un paquete.</p>
+          </div>
+          <div class="field">
+            <label>Tipo de cambio (₡ por $)</label>
+            <input class="input" id="settings-crc-rate" type="number" step="1" min="0" value="${esc(s.crcRate)}">
+            <p class="text-muted" style="margin-top:4px;font-size:13px">Se usa para mostrar los costos en colones en las listas y facturas.</p>
+          </div>
+        </div>
+      </div>`;
   }
 
   // ── INICIO ───────────────────────────────────────────────────────────────
@@ -570,6 +601,13 @@
     btn.disabled = !(tracking.trim() && weight && state.pkgSelectedClientId);
   }
 
+  function updatePkgCostCRC() {
+    const el = document.getElementById('pkg-cost-crc');
+    if (!el) return;
+    const cost = state.pkgDraft.cost;
+    el.textContent = cost ? '≈ ₡' + fmtCRC(parseFloat(cost) * state.settings.crcRate) : '';
+  }
+
   function renderPaquete() {
     const editing = state.pkgEditingId ? state.packages.find((p) => p.id === state.pkgEditingId) : null;
     const draft = state.pkgDraft;
@@ -598,8 +636,9 @@
             <input class="input" id="pkg-weight" type="number" step="0.1" min="0" value="${esc(draft.weight)}" placeholder="Ej: 3.5">
           </div>
           <div class="field">
-            <label>Costo estimado ($${RATE_PER_LB}/lb) — editable</label>
+            <label>Costo estimado ($${state.settings.ratePerLb}/lb) — editable</label>
             <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+            <p class="text-muted" id="pkg-cost-crc" style="margin-top:4px;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
           </div>
 
           ${!selectedClient ? `
@@ -661,7 +700,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap;gap:8px">
           <div>
             <strong style="font-family:var(--font-heading)">${esc(c ? c.name : 'Cliente eliminado')}</strong>
-            <span class="text-muted" style="margin-left:8px">${esc(p.tracking)} · ${p.weight} lb · $${fmtMoney(p.cost)}</span>
+            <span class="text-muted" style="margin-left:8px">${esc(p.tracking)} · ${p.weight} lb · $${fmtMoney(p.cost)} · ₡${fmtCRC(p.cost * state.settings.crcRate)}</span>
             <span class="tag tag-neutral" style="margin-left:8px">${esc(mm ? mm.name : 'Sin mensajero')}</span>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -692,6 +731,7 @@
         .filter(({ c }) => c && c.province && m.zones.includes(c.province));
 
       const totalCost = entries.reduce((sum, { p }) => sum + (Number(p.cost) || 0), 0);
+      const totalCostCRC = totalCost * state.settings.crcRate;
       const zoneLabel = m.zones.join(', ') || 'Sin zona asignada';
 
       // Group by client so a client with several packages today gets one
@@ -720,17 +760,30 @@
       const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
 
-      const rows = orderedStops.flatMap((stop) => stop.packages.map((p) => `
+      const invoiceMessage = (p, c) => {
+        const costCRC = fmtCRC(p.cost * state.settings.crcRate);
+        return `Hola ${c.name}, aquí el detalle de tu paquete:\n\nTracking: ${p.tracking}\nPeso: ${p.weight} lb\nTotal a pagar: ₡${costCRC} ($${fmtMoney(p.cost)} USD)\n\nGracias por confiar en Logística Flash.`;
+      };
+      const invoiceHref = (p, c) => `https://wa.me/${waPhone(c.phone)}?text=${encodeURIComponent(invoiceMessage(p, c))}`;
+
+      const rows = orderedStops.flatMap((stop) => stop.packages.map((p) => {
+        const hasPhone = !!(stop.c.phone && stop.c.phone.trim());
+        return `
         <tr>
           <td>${esc(stop.c.name)}</td>
           <td><a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a></td>
           <td>${esc(stop.c.phone)}</td>
           <td>${esc(p.tracking)}</td>
           <td>$${fmtMoney(p.cost)}</td>
+          <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
           <td style="text-align:right">
-            <button class="btn btn-icon btn-ghost" type="button" data-action="unassign-pkg" data-id="${p.id}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">${ICONS.trash}</button>
+            <div style="display:inline-flex;gap:6px">
+              <button class="btn btn-icon btn-ghost" type="button" data-action="send-invoice" data-href="${esc(hasPhone ? invoiceHref(p, stop.c) : '')}" aria-label="Enviar factura por WhatsApp" title="Enviar factura por WhatsApp" ${hasPhone ? '' : 'disabled'} style="color:#25D366">${ICONS.whatsappMono}</button>
+              <button class="btn btn-icon btn-ghost" type="button" data-action="unassign-pkg" data-id="${p.id}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">${ICONS.trash}</button>
+            </div>
           </td>
-        </tr>`)).join('\n');
+        </tr>`;
+      })).join('\n');
 
       return `
         <div class="card elev-sm">
@@ -743,21 +796,27 @@
           </div>
           <div class="table-scroll">
             <table class="table" style="margin-top:var(--space-2);min-width:640px">
-              <thead><tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo</th><th></th></tr></thead>
+              <thead><tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo ($)</th><th>Costo (₡)</th><th style="text-align:right">Acciones</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot>
                 <tr>
                   <td colspan="4" style="text-align:right;font-family:var(--font-heading);font-weight:800">Total a cobrar en esta ruta</td>
                   <td style="text-align:right;font-family:var(--font-heading);font-weight:800">$${fmtMoney(totalCost)}</td>
+                  <td style="text-align:right;font-family:var(--font-heading);font-weight:800">₡${fmtCRC(totalCostCRC)}</td>
                   <td></td>
                 </tr>
               </tfoot>
             </table>
           </div>
           ${entries.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-2)">Sin paquetes asignados hoy.</p>` : ''}
-          <a href="${esc(waHref)}" target="_blank" rel="noopener" class="wa-btn" style="margin-top:var(--space-3);width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none">
-            ${ICONS.whatsapp}<span>Enviar lista por WhatsApp</span>
-          </a>
+          <div style="margin-top:var(--space-3);display:flex;flex-wrap:wrap;gap:10px">
+            <a href="${esc(waHref)}" target="_blank" rel="noopener" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none">
+              ${ICONS.whatsapp}<span>Enviar lista por WhatsApp</span>
+            </a>
+            <button type="button" data-action="send-all-invoices" data-hrefs="${esc(JSON.stringify(orderedStops.flatMap((stop) => stop.c.phone && stop.c.phone.trim() ? stop.packages.map((p) => invoiceHref(p, stop.c)) : [])))}" ${entries.length === 0 ? 'disabled' : ''} class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
+              ${ICONS.invoice}<span>Enviar facturas a clientes</span>
+            </button>
+          </div>
         </div>`;
     }).join('\n');
 
@@ -885,7 +944,7 @@
     const weight = document.getElementById('pkg-weight').value;
     const cost = document.getElementById('pkg-cost').value;
     if (!tracking.trim() || !weight || !state.pkgSelectedClientId) return;
-    const finalCost = cost ? parseFloat(cost) : parseFloat(weight) * RATE_PER_LB;
+    const finalCost = cost ? parseFloat(cost) : parseFloat(weight) * state.settings.ratePerLb;
     await withBusy(async () => {
       if (state.pkgEditingId) {
         await LF.db.updatePackage(state.pkgEditingId, { tracking: tracking.trim(), weight: parseFloat(weight), cost: finalCost, clientId: state.pkgSelectedClientId });
@@ -921,6 +980,12 @@
       await LF.db.unassignPackage(id);
       await reloadPackages();
       render();
+    });
+  }
+
+  async function saveSettings(ratePerLb, crcRate) {
+    await withBusy(async () => {
+      state.settings = await LF.db.updateSettings({ ratePerLb, crcRate });
     });
   }
 
@@ -1014,6 +1079,18 @@
 
       case 'unassign-pkg': return void unassignPkg(el.dataset.id);
 
+      case 'send-invoice': {
+        const href = el.dataset.href;
+        if (href) window.open(href, '_blank');
+        return;
+      }
+      case 'send-all-invoices': {
+        let hrefs = [];
+        try { hrefs = JSON.parse(el.dataset.hrefs || '[]'); } catch (err) { hrefs = []; }
+        hrefs.forEach((href, i) => setTimeout(() => window.open(href, '_blank'), i * 500));
+        return;
+      }
+
       case 'edit-messenger': {
         const m = state.messengers.find((x) => x.id === el.dataset.id);
         if (!m) return;
@@ -1048,13 +1125,14 @@
       const w = e.target.value;
       state.pkgDraft.weight = w;
       const costEl = document.getElementById('pkg-cost');
-      const newCost = w ? (parseFloat(w) * RATE_PER_LB).toFixed(2) : '';
+      const newCost = w ? (parseFloat(w) * state.settings.ratePerLb).toFixed(2) : '';
       if (costEl) costEl.value = newCost;
       state.pkgDraft.cost = newCost;
+      updatePkgCostCRC();
       updatePkgSubmitState();
       return;
     }
-    if (id === 'pkg-cost') { state.pkgDraft.cost = e.target.value; return; }
+    if (id === 'pkg-cost') { state.pkgDraft.cost = e.target.value; updatePkgCostCRC(); return; }
     if (id === 'pkg-client-search') {
       const box = document.getElementById('pkg-matches');
       if (box) box.innerHTML = pkgMatchesHtml(e.target.value);
@@ -1088,6 +1166,12 @@
       state.clientDraft.province = e.target.value;
       state.clientDraft.canton = '';
       render();
+      return;
+    }
+    if (e.target.id === 'settings-rate-per-lb' || e.target.id === 'settings-crc-rate') {
+      const ratePerLb = parseFloat(document.getElementById('settings-rate-per-lb').value) || 0;
+      const crcRate = parseFloat(document.getElementById('settings-crc-rate').value) || 0;
+      void saveSettings(ratePerLb, crcRate);
     }
   });
 
