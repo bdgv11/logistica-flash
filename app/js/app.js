@@ -795,6 +795,7 @@
         return `Hola ${stop.c.name}, aquí el detalle de ${pkgWord}:\n\nPaquetes: ${stop.packages.length}\nTracking: ${trackings}\nPeso total: ${totalWeight} lb\nTotal a pagar: ₡${costCRC} ($${fmtMoney(totalCost)} USD)\n\nGracias por confiar en Logística Flash.`;
       };
       const invoiceHrefForStop = (stop) => `https://wa.me/${waPhone(stop.c.phone)}?text=${encodeURIComponent(invoiceMessageForStop(stop))}`;
+      const invoiceHrefsJson = esc(JSON.stringify(orderedStops.filter((stop) => stop.c.phone && stop.c.phone.trim()).map((stop) => invoiceHrefForStop(stop))));
 
       const rows = orderedStops.flatMap((stop) => {
         const hasPhone = !!(stop.c.phone && stop.c.phone.trim());
@@ -851,9 +852,12 @@
                   ${ICONS.invoice}<span>Enviar siguiente (${state.invoiceQueue.index + 1} de ${state.invoiceQueue.hrefs.length}) →</span>
                 </button>
                 <button type="button" data-action="cancel-invoice-queue" class="btn btn-ghost">Cancelar</button>
-              ` : `<span class="tag tag-accent">Facturas enviadas: ${state.invoiceQueue.hrefs.length} de ${state.invoiceQueue.hrefs.length} ✓</span>`}
+              ` : `
+                <span class="tag tag-accent">Facturas enviadas: ${state.invoiceQueue.hrefs.length} de ${state.invoiceQueue.hrefs.length} ✓</span>
+                <button type="button" data-action="send-all-invoices" data-messenger-id="${m.id}" data-hrefs="${invoiceHrefsJson}" class="btn btn-ghost">Reenviar todas</button>
+              `}
             ` : `
-              <button type="button" data-action="send-all-invoices" data-messenger-id="${m.id}" data-hrefs="${esc(JSON.stringify(orderedStops.filter((stop) => stop.c.phone && stop.c.phone.trim()).map((stop) => invoiceHrefForStop(stop))))}" ${entries.length === 0 ? 'disabled' : ''} class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
+              <button type="button" data-action="send-all-invoices" data-messenger-id="${m.id}" data-hrefs="${invoiceHrefsJson}" ${entries.length === 0 ? 'disabled' : ''} class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
                 ${ICONS.invoice}<span>Enviar facturas a clientes</span>
               </button>
             `}
