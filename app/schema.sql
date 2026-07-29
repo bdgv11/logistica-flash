@@ -21,13 +21,29 @@ alter table public.messengers add column if not exists origin text not null defa
 
 -- ── clients ──────────────────────────────────────────────────────────────────
 create table if not exists public.clients (
-  id         uuid primary key default gen_random_uuid(),
-  name       text not null,
-  phone      text not null,
-  address    text not null default '',
-  zone       text not null default '',
-  created_at timestamptz not null default now()
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  phone           text not null,
+  address         text not null default '',
+  address_details text not null default '',
+  province        text not null default '',
+  canton          text not null default '',
+  created_at      timestamptz not null default now()
 );
+alter table public.clients add column if not exists address_details text not null default '';
+alter table public.clients add column if not exists province text not null default '';
+alter table public.clients add column if not exists canton text not null default '';
+
+-- Older deployments had a single `zone` column instead of province/canton —
+-- carry its value over into `province` (canton starts blank; edit each
+-- client once to fill it in) rather than losing the data. Safe to run
+-- whether or not `zone` still exists.
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'clients' and column_name = 'zone') then
+    update public.clients set province = zone where (province is null or province = '') and zone is not null and zone <> '';
+  end if;
+end $$;
 
 -- ── packages ─────────────────────────────────────────────────────────────────
 create table if not exists public.packages (
@@ -108,7 +124,7 @@ create policy "authenticated delete packages" on public.packages for delete to a
 --   ('Mensajero 2', '8880-2222', 'https://maps.app.goo.gl/exampleSJ', array['San José']),
 --   ('Mensajero 3', '8880-3333', 'https://maps.app.goo.gl/exampleCartago', array['Cartago']);
 --
--- insert into public.clients (name, phone, address, zone) values
---   ('María Fernández Solís', '8888-1234', 'https://waze.com/ul/hd12345', 'Heredia'),
---   ('Carlos Ramírez Vargas', '8712-4455', 'https://waze.com/ul/al56789', 'Alajuela'),
---   ('Ana Sofía Chaves',      '8399-2210', 'https://maps.app.goo.gl/sanjose01', 'San José');
+-- insert into public.clients (name, phone, address, province, canton) values
+--   ('María Fernández Solís', '8888-1234', 'https://waze.com/ul/hd12345', 'Heredia', 'Heredia'),
+--   ('Carlos Ramírez Vargas', '8712-4455', 'https://waze.com/ul/al56789', 'Alajuela', 'Alajuela'),
+--   ('Ana Sofía Chaves',      '8399-2210', 'https://maps.app.goo.gl/sanjose01', 'San José', 'Curridabat');

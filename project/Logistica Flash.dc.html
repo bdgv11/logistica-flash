@@ -161,7 +161,7 @@
         <h1 style="margin-bottom:2px">{{ clientFormTitle }}</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Se guarda una sola vez por cliente. Así los mensajeros ya no dependen de mensajes sueltos por WhatsApp.</p>
 
-        <div class="card elev-sm" style="max-width:560px;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="client-form-card" style="max-width:560px;margin-bottom:var(--space-8)">
           <div class="field">
             <label>Nombre completo *</label>
             <input class="input" type="text" value="{{ clientForm.name }}" onChange="{{ setClientName }}" placeholder="Ej: María Fernández Solís">
@@ -175,8 +175,12 @@
             <input class="input" type="text" value="{{ clientForm.address }}" onChange="{{ setClientAddress }}" placeholder="Pega aquí el link de ubicación">
           </div>
           <div class="field">
-            <label>Zona — opcional</label>
-            <select class="input" value="{{ clientForm.zone }}" onChange="{{ setClientZone }}">
+            <label>Detalles de dirección — opcional</label>
+            <input class="input" type="text" value="{{ clientForm.addressDetails }}" onChange="{{ setClientAddressDetails }}" placeholder="Ej: Portón negro, casa esquinera, apto 3B">
+          </div>
+          <div class="field">
+            <label>Provincia — opcional</label>
+            <select class="input" value="{{ clientForm.province }}" onChange="{{ setClientProvince }}">
               <option value="">Selecciona provincia...</option>
               <option value="San José">San José</option>
               <option value="Alajuela">Alajuela</option>
@@ -185,6 +189,15 @@
               <option value="Guanacaste">Guanacaste</option>
               <option value="Puntarenas">Puntarenas</option>
               <option value="Limón">Limón</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Cantón — opcional</label>
+            <select class="input" value="{{ clientForm.canton }}" onChange="{{ setClientCanton }}" disabled="{{ cantonDisabled }}">
+              <option value="">Selecciona cantón...</option>
+              <sc-for list="{{ clientCantonOptions }}" as="ct" hint-placeholder-count="0">
+                <option value="{{ ct }}">{{ ct }}</option>
+              </sc-for>
             </select>
           </div>
           <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
@@ -198,10 +211,14 @@
         <hr class="hr">
 
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Clientes guardados ({{ clients.length }})</h4>
+        <div class="field" style="max-width:360px">
+          <label>Buscar por nombre, zona o teléfono</label>
+          <input class="input" type="text" value="{{ clientsSearch }}" onChange="{{ setClientsSearch }}" placeholder="Ej: María, Heredia, 8888...">
+        </div>
         <div style="overflow-x:auto">
         <table class="table">
           <thead>
-            <tr><th>Nombre</th><th>Zona</th><th>Teléfono</th><th>Dirección</th><th></th></tr>
+            <tr><th>Nombre</th><th>Provincia</th><th>Cantón</th><th>Teléfono</th><th>Dirección</th><th></th></tr>
           </thead>
           <tbody>
             <sc-for list="{{ pageClients }}" as="c" hint-placeholder-count="4">
@@ -211,7 +228,8 @@
                     <span class="tag" style="background:#fdecc8;color:#8a5a00;margin-left:6px">Falta info</span>
                   </sc-if>
                 </td>
-                <td><span class="tag tag-neutral">{{ c.zoneLabel }}</span></td>
+                <td><span class="tag tag-neutral">{{ c.provinceLabel }}</span></td>
+                <td>{{ c.cantonLabel }}</td>
                 <td>{{ c.phone }}</td>
                 <td>
                   <sc-if value="{{ c.hasAddress }}" hint-placeholder-val="{{ true }}">
@@ -237,6 +255,9 @@
         <sc-if value="{{ clientsEmpty }}" hint-placeholder-val="{{ false }}">
           <p class="text-muted" style="margin-top:var(--space-3)">Aún no hay clientes guardados.</p>
         </sc-if>
+        <sc-if value="{{ clientsNoResults }}" hint-placeholder-val="{{ false }}">
+          <p class="text-muted" style="margin-top:var(--space-3)">Ningún cliente coincide con la búsqueda.</p>
+        </sc-if>
         <sc-if value="{{ showPagination }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--space-3)">
             <button class="btn btn-secondary" type="button" onClick="{{ prevClientsPage }}" disabled="{{ prevDisabled }}">← Anterior</button>
@@ -253,7 +274,7 @@
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
 
-        <div class="card elev-sm" style="max-width:520px;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="pkg-form-card" style="max-width:520px;margin-bottom:var(--space-8)">
           <div class="card-kicker">{{ formKicker }}</div>
           <div class="card-title" style="margin-bottom:var(--space-2)">{{ formTitle }}</div>
           <div class="field">
@@ -412,7 +433,7 @@
         <h1 style="margin-bottom:2px">{{ messengerFormTitle }}</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Nombre, teléfono para WhatsApp y las provincias que cubre cada mensajero.</p>
 
-        <div class="card elev-sm" style="max-width:560px;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="messenger-form-card" style="max-width:560px;margin-bottom:var(--space-8)">
           <div class="field">
             <label>Nombre *</label>
             <input class="input" type="text" value="{{ messengerForm.name }}" onChange="{{ setMessengerName }}" placeholder="Ej: Mensajero 1">
@@ -469,8 +490,12 @@
                 </td>
                 <td><span class="tag tag-neutral">{{ m.zoneLabel }}</span></td>
                 <td style="text-align:right;white-space:nowrap">
-                  <button class="btn btn-ghost" type="button" onClick="{{ m.onEdit }}">Editar</button>
-                  <button class="btn btn-ghost" type="button" onClick="{{ m.onDelete }}">Eliminar</button>
+                  <button class="btn btn-icon btn-ghost" type="button" onClick="{{ m.onEdit }}" aria-label="Editar" title="Editar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+                  </button>
+                  <button class="btn btn-icon btn-ghost" type="button" onClick="{{ m.onDelete }}" aria-label="Eliminar" title="Eliminar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                  </button>
                 </td>
               </tr>
             </sc-for>
@@ -487,6 +512,19 @@
 </div>
 </sc-if>
 
+<sc-if value="{{ confirmOpen }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" style="position:fixed;inset:0;z-index:1000">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <div class="dialog-title" id="confirm-dialog-title">{{ confirmTitle }}</div>
+      <div class="dialog-body">{{ confirmMessage }}</div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" onClick="{{ cancelConfirm }}">Cancelar</button>
+        <button type="button" class="btn btn-primary" onClick="{{ acceptConfirm }}">{{ confirmActionLabel }}</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
 </x-dc>
 <script type="text/x-dc" data-dc-script>
 const PROVINCIAS = ['San José', 'Alajuela', 'Cartago', 'Heredia', 'Guanacaste', 'Puntarenas', 'Limón'];
@@ -501,6 +539,15 @@ function messengerForZone(zone, messengers) { return zone ? (messengers.find(m =
 function waPhone(phone) { return '506' + String(phone).replace(/\D/g, ''); }
 
 const LEGACY_ZONE_SPLIT = { 'Heredia y Alajuela': ['Heredia', 'Alajuela'] };
+const CANTONES_BY_PROVINCIA = {
+  'San José': ['San José', 'Escazú', 'Desamparados', 'Puriscal', 'Tarrazú', 'Aserrí', 'Mora', 'Goicoechea', 'Santa Ana', 'Alajuelita', 'Vázquez de Coronado', 'Acosta', 'Tibás', 'Moravia', 'Montes de Oca', 'Turrubares', 'Dota', 'Curridabat', 'Pérez Zeledón', 'León Cortés'],
+  'Alajuela': ['Alajuela', 'San Ramón', 'Grecia', 'San Mateo', 'Atenas', 'Naranjo', 'Palmares', 'Poás', 'Orotina', 'San Carlos', 'Zarcero', 'Sarchí', 'Upala', 'Los Chiles', 'Guatuso', 'Río Cuarto'],
+  'Cartago': ['Cartago', 'Paraíso', 'La Unión', 'Jiménez', 'Turrialba', 'Alvarado', 'Oreamuno', 'El Guarco'],
+  'Heredia': ['Heredia', 'Barva', 'Santo Domingo', 'Santa Bárbara', 'San Rafael', 'San Isidro', 'Belén', 'Flores', 'San Pablo', 'Sarapiquí'],
+  'Guanacaste': ['Liberia', 'Nicoya', 'Santa Cruz', 'Bagaces', 'Carrillo', 'Cañas', 'Abangares', 'Tilarán', 'Nandayure', 'La Cruz', 'Hojancha'],
+  'Puntarenas': ['Puntarenas', 'Esparza', 'Buenos Aires', 'Montes de Oro', 'Osa', 'Quepos', 'Golfito', 'Coto Brus', 'Parrita', 'Corredores', 'Garabito'],
+  'Limón': ['Limón', 'Pococí', 'Siquirres', 'Talamanca', 'Matina', 'Guácimo'],
+};
 function normalizeClientZone(zone) {
   if (!zone) return '';
   if (PROVINCIAS.includes(zone)) return zone;
@@ -508,7 +555,7 @@ function normalizeClientZone(zone) {
   return zone;
 }
 function migrateData(data) {
-  const clients = (data.clients || []).map(c => ({ ...c, zone: normalizeClientZone(c.zone) }));
+  const clients = (data.clients || []).map(c => ({ ...c, province: normalizeClientZone(c.province || c.zone), canton: c.canton || '' }));
   const messengers = (data.messengers || []).map(m => {
     if (Array.isArray(m.zones)) return { ...m, origin: m.origin || '' };
     const zones = LEGACY_ZONE_SPLIT[m.zone] || (m.zone && PROVINCIAS.includes(m.zone) ? [m.zone] : []);
@@ -530,14 +577,14 @@ function seedData() {
     { id: 'msg3', name: 'Mensajero 3', phone: '8880-3333', origin: 'https://maps.app.goo.gl/exampleCartago', zones: ['Cartago'] },
   ];
   const clients = [
-    { id: 'c1', name: 'María Fernández Solís', phone: '8888-1234', address: 'https://waze.com/ul/hd12345', zone: 'Heredia' },
-    { id: 'c2', name: 'Carlos Ramírez Vargas', phone: '8712-4455', address: 'https://waze.com/ul/al56789', zone: 'Alajuela' },
-    { id: 'c3', name: 'Ana Sofía Chaves', phone: '8399-2210', address: 'https://maps.app.goo.gl/sanjose01', zone: 'San José' },
-    { id: 'c4', name: 'Luis Diego Mora', phone: '8654-7789', address: 'https://maps.app.goo.gl/sanjose02', zone: 'San José' },
-    { id: 'c5', name: 'Gabriela Salas Cordero', phone: '8901-3345', address: 'https://waze.com/ul/cartago01', zone: 'Cartago' },
-    { id: 'c6', name: 'José Pablo Jiménez', phone: '8223-9981', address: 'https://waze.com/ul/cartago02', zone: 'Cartago' },
-    { id: 'c7', name: 'Fiorella Araya Rojas', phone: '8577-1120', address: 'https://maps.app.goo.gl/heredia03', zone: 'Heredia' },
-    { id: 'c8', name: 'Esteban Vindas Ureña', phone: '8140-6650', address: 'https://maps.app.goo.gl/sanjose03', zone: 'San José' },
+    { id: 'c1', name: 'María Fernández Solís', phone: '8888-1234', address: 'https://waze.com/ul/hd12345', province: 'Heredia', canton: 'Heredia' },
+    { id: 'c2', name: 'Carlos Ramírez Vargas', phone: '8712-4455', address: 'https://waze.com/ul/al56789', province: 'Alajuela', canton: 'Alajuela' },
+    { id: 'c3', name: 'Ana Sofía Chaves', phone: '8399-2210', address: 'https://maps.app.goo.gl/sanjose01', province: 'San José', canton: 'Curridabat' },
+    { id: 'c4', name: 'Luis Diego Mora', phone: '8654-7789', address: 'https://maps.app.goo.gl/sanjose02', province: 'San José', canton: 'Escazú' },
+    { id: 'c5', name: 'Gabriela Salas Cordero', phone: '8901-3345', address: 'https://waze.com/ul/cartago01', province: 'Cartago', canton: 'La Unión' },
+    { id: 'c6', name: 'José Pablo Jiménez', phone: '8223-9981', address: 'https://waze.com/ul/cartago02', province: 'Cartago', canton: 'Paraíso' },
+    { id: 'c7', name: 'Fiorella Araya Rojas', phone: '8577-1120', address: 'https://maps.app.goo.gl/heredia03', province: 'Heredia', canton: 'Santo Domingo' },
+    { id: 'c8', name: 'Esteban Vindas Ureña', phone: '8140-6650', address: 'https://maps.app.goo.gl/sanjose03', province: 'San José', canton: 'Goicoechea' },
   ];
   const packages = [
     { id: 'pk1', tracking: 'TBA912345671', weight: 2.4, cost: 10.2, clientId: 'c1', arrived: true, assignedDate: today },
@@ -568,13 +615,27 @@ function seedData() {
 }
 
 class Component extends DCLogic {
+  scrollToForm(id) {
+    setTimeout(() => {
+      const node = document.getElementById(id);
+      if (!node) return;
+      const top = node.getBoundingClientRect().top + window.scrollY - 24;
+      window.scrollTo({ top, behavior: 'smooth' });
+    }, 50);
+  }
+
   state = {
     tab: 'inicio',
+    confirmOpen: false,
+    confirmTitle: '',
+    confirmMessage: '',
+    confirmActionLabel: 'Eliminar',
+    confirmAction: null,
     clients: [],
     packages: [],
     messengers: [],
     messengerForm: { id: null, name: '', phone: '', origin: '', zones: [] },
-    clientForm: { id: null, name: '', phone: '', address: '', zone: '' },
+    clientForm: { id: null, name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
     pkgDraft: { tracking: '', weight: '', cost: '' },
     editingPkgId: null,
     waitingSearch: '',
@@ -582,6 +643,7 @@ class Component extends DCLogic {
     search: '',
     selectedClientId: null,
     clientsPage: 1,
+    clientsSearch: '',
     isAuthenticated: false,
     loginForm: { username: '', password: '' },
     loginError: false,
@@ -641,14 +703,32 @@ class Component extends DCLogic {
 
   startEditMessenger(m) {
     this.setState({ messengerForm: { id: m.id, name: m.name, phone: m.phone, origin: m.origin || '', zones: [...m.zones] } });
+    this.scrollToForm('messenger-form-card');
   }
 
   cancelEditMessenger() {
     this.setState({ messengerForm: { id: null, name: '', phone: '', origin: '', zones: [] } });
   }
 
+  askConfirm(title, message, action, actionLabel) {
+    this.setState({ confirmOpen: true, confirmTitle: title, confirmMessage: message, confirmAction: action, confirmActionLabel: actionLabel || 'Eliminar' });
+  }
+
+  cancelConfirm() {
+    this.setState({ confirmOpen: false, confirmAction: null });
+  }
+
+  acceptConfirm() {
+    const action = this.state.confirmAction;
+    this.setState({ confirmOpen: false, confirmAction: null });
+    if (action) action();
+  }
+
   deleteMessenger(id) {
-    if (!window.confirm('¿Eliminar este mensajero? Las zonas que cubre quedarán sin mensajero asignado.')) return;
+    this.askConfirm('Eliminar mensajero', '¿Eliminar este mensajero? Las zonas que cubre quedarán sin mensajero asignado.', () => this.doDeleteMessenger(id));
+  }
+
+  doDeleteMessenger(id) {
     this.setState(s => {
       const messengers = s.messengers.filter(m => m.id !== id);
       this.persist({ clients: s.clients, packages: s.packages, messengers });
@@ -679,7 +759,10 @@ class Component extends DCLogic {
   }
 
   unassignPackage(id) {
-    if (!window.confirm('¿Quitar este paquete de la ruta de hoy? Volverá a pendientes por asignar.')) return;
+    this.askConfirm('Quitar paquete', '¿Quitar este paquete de la ruta de hoy? Volverá a pendientes por asignar.', () => this.doUnassignPackage(id), 'Quitar');
+  }
+
+  doUnassignPackage(id) {
     this.setState(s => {
       const packages = s.packages.map(p => p.id === id ? { ...p, clientId: null, arrived: false, assignedDate: null } : p);
       this.persist({ clients: s.clients, packages, messengers: s.messengers });
@@ -688,10 +771,12 @@ class Component extends DCLogic {
   }
 
   goToClientes() {
-    this.setState({ tab: 'clientes', clientForm: { id: null, name: '', phone: '', address: '', zone: '' } });
+    this.setState({ tab: 'clientes', clientForm: { id: null, name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' } });
   }
 
   setClientsPage(page) { this.setState({ clientsPage: page }); }
+
+  setClientsSearch(e) { this.setState({ clientsSearch: e.target.value, clientsPage: 1 }); }
 
   setClientField(field, e) {
     this.setState(s => ({ clientForm: { ...s.clientForm, [field]: e.target.value } }));
@@ -703,26 +788,30 @@ class Component extends DCLogic {
     this.setState(s => {
       let clients;
       if (f.id) {
-        clients = s.clients.map(c => c.id === f.id ? { ...c, name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), zone: f.zone } : c);
+        clients = s.clients.map(c => c.id === f.id ? { ...c, name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), addressDetails: f.addressDetails.trim(), province: f.province, canton: f.canton } : c);
       } else {
-        const newClient = { id: 'c' + Date.now(), name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), zone: f.zone };
+        const newClient = { id: 'c' + Date.now(), name: f.name.trim(), phone: f.phone.trim(), address: f.address.trim(), addressDetails: f.addressDetails.trim(), province: f.province, canton: f.canton };
         clients = [...s.clients, newClient];
       }
       this.persist({ clients, packages: s.packages });
-      return { clients, clientForm: { id: null, name: '', phone: '', address: '', zone: '' } };
+      return { clients, clientForm: { id: null, name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' } };
     });
   }
 
   startEditClient(client) {
-    this.setState({ clientForm: { id: client.id, name: client.name, phone: client.phone, address: client.address, zone: client.zone } });
+    this.setState({ clientForm: { id: client.id, name: client.name, phone: client.phone, address: client.address, addressDetails: client.addressDetails || '', province: client.province || '', canton: client.canton || '' } });
+    this.scrollToForm('client-form-card');
   }
 
   cancelEditClient() {
-    this.setState({ clientForm: { id: null, name: '', phone: '', address: '', zone: '' } });
+    this.setState({ clientForm: { id: null, name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' } });
   }
 
   deleteClient(id) {
-    if (!window.confirm('¿Eliminar este cliente? Sus paquetes asignados quedarán pendientes.')) return;
+    this.askConfirm('Eliminar cliente', '¿Eliminar este cliente? Sus paquetes asignados quedarán pendientes.', () => this.doDeleteClient(id));
+  }
+
+  doDeleteClient(id) {
     this.setState(s => {
       const clients = s.clients.filter(c => c.id !== id);
       const packages = s.packages.map(p => p.clientId === id ? { ...p, clientId: null, assignedDate: null } : p);
@@ -760,6 +849,7 @@ class Component extends DCLogic {
   }
 
   startEditPkg(p) {
+    this.scrollToForm('pkg-form-card');
     this.setState({
       editingPkgId: p.id,
       pkgDraft: { tracking: p.tracking, weight: String(p.weight), cost: String(p.cost) },
@@ -775,7 +865,10 @@ class Component extends DCLogic {
   setWaitingPage(page) { this.setState({ waitingPage: page }); }
 
   markArrived(id) {
-    if (!window.confirm('¿Confirmas que este paquete ya está aquí y listo para el mensajero?')) return;
+    this.askConfirm('Confirmar llegada', '¿Confirmas que este paquete ya está aquí y listo para el mensajero?', () => this.doMarkArrived(id), 'Confirmar');
+  }
+
+  doMarkArrived(id) {
     const today = todayISO();
     this.setState(s => {
       const packages = s.packages.map(p => p.id === id ? { ...p, arrived: true, assignedDate: today } : p);
@@ -817,14 +910,19 @@ class Component extends DCLogic {
       onDelete: () => this.deleteClient(c.id),
     }));
 
-    const PAGE_SIZE = 8;
+    const PAGE_SIZE = 10;
     const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    const clientsTotalPages = Math.max(1, Math.ceil(sortedClients.length / PAGE_SIZE));
+    const clientsQuery = (s.clientsSearch || '').trim().toLowerCase();
+    const filteredClients = clientsQuery
+      ? sortedClients.filter(c => (c.name || '').toLowerCase().includes(clientsQuery) || (c.province || '').toLowerCase().includes(clientsQuery) || (c.canton || '').toLowerCase().includes(clientsQuery) || (c.phone || '').toLowerCase().includes(clientsQuery))
+      : sortedClients;
+    const clientsTotalPages = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE));
     const clientsPageClamped = Math.min(Math.max(1, s.clientsPage), clientsTotalPages);
-    const pageClients = sortedClients.slice((clientsPageClamped - 1) * PAGE_SIZE, clientsPageClamped * PAGE_SIZE).map(c => ({
+    const pageClients = filteredClients.slice((clientsPageClamped - 1) * PAGE_SIZE, clientsPageClamped * PAGE_SIZE).map(c => ({
       ...c,
-      incomplete: !c.address || !c.zone,
-      zoneLabel: c.zone || 'Sin zona',
+      incomplete: !c.address || !c.province,
+      provinceLabel: c.province || 'Sin provincia',
+      cantonLabel: c.canton || '—',
       hasAddress: !!c.address,
       noAddress: !c.address,
     }));
@@ -832,18 +930,18 @@ class Component extends DCLogic {
     const search = s.search;
     const matches = search.trim()
       ? s.clients.filter(c => c.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 6).map(c => {
-          const mm = messengerForZone(c.zone, s.messengers);
-          return { id: c.id, name: c.name, zone: c.zone || 'Sin zona', messengerName: mm ? mm.name : 'Sin mensajero', onSelect: () => this.selectClient(c.id) };
+          const mm = messengerForZone(c.province, s.messengers);
+          return { id: c.id, name: c.name, zone: [c.province, c.canton].filter(Boolean).join(' — ') || 'Sin zona', messengerName: mm ? mm.name : 'Sin mensajero', onSelect: () => this.selectClient(c.id) };
         })
       : [];
 
     const selectedClientRaw = s.selectedClientId ? s.clients.find(c => c.id === s.selectedClientId) : null;
-    const selectedClientMessenger = selectedClientRaw ? messengerForZone(selectedClientRaw.zone, s.messengers) : null;
-    const selectedClient = selectedClientRaw ? { ...selectedClientRaw, zone: selectedClientRaw.zone || 'Sin zona', messengerName: selectedClientMessenger ? selectedClientMessenger.name : 'Sin mensajero' } : null;
+    const selectedClientMessenger = selectedClientRaw ? messengerForZone(selectedClientRaw.province, s.messengers) : null;
+    const selectedClient = selectedClientRaw ? { ...selectedClientRaw, zone: [selectedClientRaw.province, selectedClientRaw.canton].filter(Boolean).join(' — ') || 'Sin zona', messengerName: selectedClientMessenger ? selectedClientMessenger.name : 'Sin mensajero' } : null;
 
     const waitingArrivalAll = s.packages.filter(p => p.clientId && !p.arrived).map(p => {
       const c = s.clients.find(cl => cl.id === p.clientId);
-      const mm = c ? messengerForZone(c.zone, s.messengers) : null;
+      const mm = c ? messengerForZone(c.province, s.messengers) : null;
       return {
         id: p.id, tracking: p.tracking, weight: p.weight, cost: p.cost,
         clientName: c ? c.name : 'Cliente eliminado', messengerName: mm ? mm.name : 'Sin mensajero',
@@ -866,7 +964,7 @@ class Component extends DCLogic {
       const entries = s.packages
         .filter(p => p.assignedDate === today)
         .map(p => ({ p, c: s.clients.find(cl => cl.id === p.clientId) }))
-        .filter(x => x.c && x.c.zone && m.zones.includes(x.c.zone))
+        .filter(x => x.c && x.c.province && m.zones.includes(x.c.province))
         .map(x => ({ id: x.p.id, name: x.c.name, address: x.c.address, phone: x.c.phone, tracking: x.p.tracking, cost: x.p.cost, onRemove: () => this.unassignPackage(x.p.id) }));
       const totalCost = entries.reduce((sum, e) => sum + (parseFloat(e.cost) || 0), 0).toFixed(2);
       const zoneLabel = m.zones.join(', ') || 'Sin zona asignada';
@@ -886,6 +984,8 @@ class Component extends DCLogic {
     }));
 
     return {
+      confirmOpen: s.confirmOpen, confirmTitle: s.confirmTitle, confirmMessage: s.confirmMessage, confirmActionLabel: s.confirmActionLabel,
+      cancelConfirm: () => this.cancelConfirm(), acceptConfirm: () => this.acceptConfirm(),
       isInicio: s.tab === 'inicio', isClientes: s.tab === 'clientes', isPaquete: s.tab === 'paquete', isLista: s.tab === 'lista', isMensajeros: s.tab === 'mensajeros',
       ariaHome: s.tab === 'inicio' ? 'page' : undefined,
       ariaClientes: s.tab === 'clientes' ? 'page' : undefined,
@@ -925,7 +1025,11 @@ class Component extends DCLogic {
       setClientName: (e) => this.setClientField('name', e),
       setClientPhone: (e) => this.setClientField('phone', e),
       setClientAddress: (e) => this.setClientField('address', e),
-      setClientZone: (e) => this.setClientField('zone', e),
+      setClientAddressDetails: (e) => this.setClientField('addressDetails', e),
+      setClientProvince: (e) => this.setClientField('province', e),
+      setClientCanton: (e) => this.setClientField('canton', e),
+      clientCantonOptions: CANTONES_BY_PROVINCIA[s.clientForm.province] || [],
+      cantonDisabled: !s.clientForm.province,
       saveClient: () => this.saveClient(),
       clientSaveLabel: s.clientForm.id ? 'Guardar cambios' : 'Guardar cliente',
       isEditingClient: !!s.clientForm.id,
@@ -933,6 +1037,9 @@ class Component extends DCLogic {
       clients,
       pageClients,
       clientsEmpty: clients.length === 0,
+      clientsNoResults: clients.length > 0 && filteredClients.length === 0,
+      clientsSearch: s.clientsSearch,
+      setClientsSearch: (e) => this.setClientsSearch(e),
       showPagination: clientsTotalPages > 1,
       clientsPageDisplay: clientsPageClamped,
       clientsTotalPages,

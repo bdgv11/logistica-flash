@@ -12,7 +12,11 @@ window.LF = window.LF || {};
   }
 
   function mapClient(row) {
-    return { id: row.id, name: row.name, phone: row.phone, address: row.address || '', zone: row.zone || '' };
+    return {
+      id: row.id, name: row.name, phone: row.phone,
+      address: row.address || '', addressDetails: row.address_details || '',
+      province: row.province || '', canton: row.canton || '',
+    };
   }
 
   function mapMessenger(row) {
@@ -39,17 +43,17 @@ window.LF = window.LF || {};
       return data.map(mapClient);
     },
 
-    async createClient({ name, phone, address, zone }) {
+    async createClient({ name, phone, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .insert({ name, phone, address: address || '', zone: zone || '' })
+        .insert({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .select().single();
       throwIfError(error);
       return mapClient(data);
     },
 
-    async updateClient(id, { name, phone, address, zone }) {
+    async updateClient(id, { name, phone, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .update({ name, phone, address: address || '', zone: zone || '' })
+        .update({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapClient(data);

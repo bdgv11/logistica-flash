@@ -2,8 +2,17 @@
   'use strict';
 
   const PROVINCIAS = ['San José', 'Alajuela', 'Cartago', 'Heredia', 'Guanacaste', 'Puntarenas', 'Limón'];
+  const CANTONES_BY_PROVINCIA = {
+    'San José': ['San José', 'Escazú', 'Desamparados', 'Puriscal', 'Tarrazú', 'Aserrí', 'Mora', 'Goicoechea', 'Santa Ana', 'Alajuelita', 'Vázquez de Coronado', 'Acosta', 'Tibás', 'Moravia', 'Montes de Oca', 'Turrubares', 'Dota', 'Curridabat', 'Pérez Zeledón', 'León Cortés'],
+    'Alajuela': ['Alajuela', 'San Ramón', 'Grecia', 'San Mateo', 'Atenas', 'Naranjo', 'Palmares', 'Poás', 'Orotina', 'San Carlos', 'Zarcero', 'Sarchí', 'Upala', 'Los Chiles', 'Guatuso', 'Río Cuarto'],
+    'Cartago': ['Cartago', 'Paraíso', 'La Unión', 'Jiménez', 'Turrialba', 'Alvarado', 'Oreamuno', 'El Guarco'],
+    'Heredia': ['Heredia', 'Barva', 'Santo Domingo', 'Santa Bárbara', 'San Rafael', 'San Isidro', 'Belén', 'Flores', 'San Pablo', 'Sarapiquí'],
+    'Guanacaste': ['Liberia', 'Nicoya', 'Santa Cruz', 'Bagaces', 'Carrillo', 'Cañas', 'Abangares', 'Tilarán', 'Nandayure', 'La Cruz', 'Hojancha'],
+    'Puntarenas': ['Puntarenas', 'Esparza', 'Buenos Aires', 'Montes de Oro', 'Osa', 'Quepos', 'Golfito', 'Coto Brus', 'Parrita', 'Corredores', 'Garabito'],
+    'Limón': ['Limón', 'Pococí', 'Siquirres', 'Talamanca', 'Matina', 'Guácimo'],
+  };
   const RATE_PER_LB = 4.25;
-  const PAGE_SIZE = 8;
+  const PAGE_SIZE = 10;
   const WAITING_PAGE_SIZE = 8;
 
   const state = {
@@ -13,7 +22,7 @@
     packages: [],
     clientsPage: 1,
     clientEditingId: null,
-    clientDraft: { name: '', phone: '', address: '', zone: '' },
+    clientDraft: { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
     messengerEditingId: null,
     messengerZonesDraft: [],
     messengerDraft: { name: '', phone: '', origin: '' },
@@ -24,6 +33,11 @@
     session: null,
     loading: true,
     busy: false,
+    confirmOpen: false,
+    confirmTitle: '',
+    confirmMessage: '',
+    confirmActionLabel: 'Eliminar',
+    confirmAction: null,
   };
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -45,9 +59,22 @@
     return raw.charAt(0).toUpperCase() + raw.slice(1);
   }
 
-  function messengerForZone(zone) {
-    if (!zone) return null;
-    return state.messengers.find((m) => Array.isArray(m.zones) && m.zones.includes(zone)) || null;
+  function messengerForZone(province) {
+    if (!province) return null;
+    return state.messengers.find((m) => Array.isArray(m.zones) && m.zones.includes(province)) || null;
+  }
+
+  function clientZoneLabel(c) {
+    return [c.province, c.canton].filter(Boolean).join(' — ') || 'Sin zona';
+  }
+
+  function scrollToForm(id) {
+    setTimeout(() => {
+      const node = document.getElementById(id);
+      if (!node) return;
+      const top = node.getBoundingClientRect().top + window.scrollY - 24;
+      window.scrollTo({ top, behavior: 'smooth' });
+    }, 50);
   }
 
   function waPhone(phone) { return '506' + String(phone).replace(/\D/g, ''); }
@@ -94,6 +121,7 @@
   const shellRoot = document.getElementById('shell-root');
   const navRoot = document.getElementById('nav-root');
   const mainRoot = document.getElementById('main-root');
+  const confirmRoot = document.getElementById('confirm-root');
 
   function render() {
     if (state.loading) {
@@ -119,6 +147,44 @@
     // the list silently disappears until something else refills it.
     if (state.tab === 'paquete') renderWaitingList();
     if (state.tab === 'clientes') renderClientList();
+  }
+
+  // ── confirm modal ────────────────────────────────────────────────────────
+  function renderConfirm() {
+    if (!confirmRoot) return;
+    if (!state.confirmOpen) { confirmRoot.innerHTML = ''; return; }
+    confirmRoot.innerHTML = `
+      <div class="dialog-backdrop" style="position:fixed;inset:0;z-index:1000">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+          <div class="dialog-title" id="confirm-dialog-title">${esc(state.confirmTitle)}</div>
+          <div class="dialog-body">${esc(state.confirmMessage)}</div>
+          <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" data-action="cancel-confirm">Cancelar</button>
+            <button type="button" class="btn btn-primary" data-action="accept-confirm">${esc(state.confirmActionLabel)}</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function askConfirm(title, message, action, actionLabel) {
+    state.confirmOpen = true;
+    state.confirmTitle = title;
+    state.confirmMessage = message;
+    state.confirmAction = action;
+    state.confirmActionLabel = actionLabel || 'Eliminar';
+    renderConfirm();
+  }
+
+  function closeConfirm() {
+    state.confirmOpen = false;
+    state.confirmAction = null;
+    renderConfirm();
+  }
+
+  async function acceptConfirm() {
+    const action = state.confirmAction;
+    closeConfirm();
+    if (action) await action();
   }
 
   // ── login ────────────────────────────────────────────────────────────────
@@ -259,7 +325,7 @@
         <h1 style="margin-bottom:2px">${editing ? 'Editar cliente' : 'Agregar cliente'}</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Se guarda una sola vez por cliente. Así los mensajeros ya no dependen de mensajes sueltos por WhatsApp.</p>
 
-        <div class="card elev-sm" style="max-width:560px;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="client-form-card" style="max-width:560px;margin-bottom:var(--space-8)">
           <div class="field">
             <label>Nombre completo *</label>
             <input class="input" id="client-name" type="text" value="${esc(f.name)}" placeholder="Ej: María Fernández Solís">
@@ -273,10 +339,21 @@
             <input class="input" id="client-address" type="text" value="${esc(f.address)}" placeholder="Pega aquí el link de ubicación">
           </div>
           <div class="field">
-            <label>Zona — opcional</label>
-            <select class="input" id="client-zone">
+            <label>Detalles de dirección — opcional</label>
+            <input class="input" id="client-address-details" type="text" value="${esc(f.addressDetails)}" placeholder="Ej: Portón negro, casa esquinera, apto 3B">
+          </div>
+          <div class="field">
+            <label>Provincia — opcional</label>
+            <select class="input" id="client-province">
               <option value="">Selecciona provincia...</option>
-              ${PROVINCIAS.map((p) => `<option value="${esc(p)}" ${f.zone === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+              ${PROVINCIAS.map((p) => `<option value="${esc(p)}" ${f.province === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>Cantón — opcional</label>
+            <select class="input" id="client-canton" ${!f.province ? 'disabled' : ''}>
+              <option value="">Selecciona cantón...</option>
+              ${(CANTONES_BY_PROVINCIA[f.province] || []).map((ct) => `<option value="${esc(ct)}" ${f.canton === ct ? 'selected' : ''}>${esc(ct)}</option>`).join('')}
             </select>
           </div>
           <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
@@ -289,8 +366,8 @@
 
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Clientes guardados (${state.clients.length})</h4>
         <div class="field" style="max-width:320px">
-          <label>Buscar por nombre, teléfono o zona</label>
-          <input class="input" id="client-search" type="text" placeholder="Ej: María, 8888-1234 o Heredia">
+          <label>Buscar por nombre, zona o teléfono</label>
+          <input class="input" id="client-search" type="text" placeholder="Ej: María, Heredia, 8888...">
         </div>
         <div id="client-list"></div>
       </div>`;
@@ -306,7 +383,8 @@
       ? state.clients.filter((c) =>
           normalize(c.name).includes(q) ||
           normalize(c.phone).includes(q) ||
-          normalize(c.zone).includes(q))
+          normalize(c.province).includes(q) ||
+          normalize(c.canton).includes(q))
       : state.clients;
     const sorted = [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
@@ -315,11 +393,12 @@
     const pageClients = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
     const rows = pageClients.map((c) => {
-      const incomplete = !c.address || !c.zone;
+      const incomplete = !c.address || !c.province;
       return `
         <tr>
           <td>${esc(c.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Falta info</span>' : ''}</td>
-          <td><span class="tag tag-neutral">${esc(c.zone || 'Sin zona')}</span></td>
+          <td><span class="tag tag-neutral">${esc(c.province || 'Sin provincia')}</span></td>
+          <td>${esc(c.canton || '—')}</td>
           <td>${esc(c.phone)}</td>
           <td>${c.address
             ? `<a href="${esc(c.address)}" target="_blank" rel="noopener">Ver ubicación</a>`
@@ -334,7 +413,7 @@
     container.innerHTML = `
       <div class="table-scroll">
         <table class="table">
-          <thead><tr><th>Nombre</th><th>Zona</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Provincia</th><th>Cantón</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -354,12 +433,12 @@
     const matches = state.clients.filter((c) => normalize(c.name).includes(q)).slice(0, 6);
     if (matches.length === 0) return `<p class="text-muted">Sin coincidencias. Revisa el nombre o agrégalo en "Clientes".</p>`;
     const items = matches.map((c) => {
-      const mm = messengerForZone(c.zone);
+      const mm = messengerForZone(c.province);
       return `
         <button type="button" data-action="select-pkg-client" data-id="${c.id}" class="btn btn-secondary" style="justify-content:space-between;text-align:left;height:auto;padding:var(--space-2)">
           <span>${esc(c.name)}</span>
           <span style="display:flex;gap:6px">
-            <span class="tag tag-neutral">${esc(c.zone || 'Sin zona')}</span>
+            <span class="tag tag-neutral">${esc(clientZoneLabel(c))}</span>
             <span class="tag tag-accent">${esc(mm ? mm.name : 'Sin mensajero')}</span>
           </span>
         </button>`;
@@ -380,7 +459,7 @@
     const draft = state.pkgDraft;
 
     const selectedClient = state.pkgSelectedClientId ? clientById(state.pkgSelectedClientId) : null;
-    const selectedMessenger = selectedClient ? messengerForZone(selectedClient.zone) : null;
+    const selectedMessenger = selectedClient ? messengerForZone(selectedClient.province) : null;
 
     const waitingAll = state.packages.filter((p) => p.clientId && !p.arrived)
       .map((p) => ({ p, c: clientById(p.clientId) }))
@@ -391,7 +470,7 @@
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
 
-        <div class="card elev-sm" style="max-width:520px;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="pkg-form-card" style="max-width:520px;margin-bottom:var(--space-8)">
           <div class="card-kicker">${editing ? 'Editar paquete' : 'Nuevo paquete'}</div>
           <div class="card-title" style="margin-bottom:var(--space-2)">Datos del paquete y cliente</div>
           <div class="field">
@@ -419,7 +498,7 @@
               <p class="card-body" style="margin-bottom:4px">Teléfono: ${esc(selectedClient.phone)}</p>
               <p class="card-body" style="margin-bottom:6px">Dirección: ${selectedClient.address ? `<a href="${esc(selectedClient.address)}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span class="text-muted">Sin dirección</span>'}</p>
               <div style="display:flex;gap:6px">
-                <span class="tag tag-neutral">${esc(selectedClient.zone || 'Sin zona')}</span>
+                <span class="tag tag-neutral">${esc(clientZoneLabel(selectedClient))}</span>
                 <span class="tag tag-accent">Mensajero: ${esc(selectedMessenger ? selectedMessenger.name : 'Sin mensajero')}</span>
               </div>
             </div>
@@ -461,7 +540,7 @@
     const pageItems = filtered.slice((page - 1) * WAITING_PAGE_SIZE, page * WAITING_PAGE_SIZE);
 
     const rows = pageItems.map(({ p, c }) => {
-      const mm = c ? messengerForZone(c.zone) : null;
+      const mm = c ? messengerForZone(c.province) : null;
       return `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap;gap:8px">
           <div>
@@ -494,7 +573,7 @@
       const entries = state.packages
         .filter((p) => p.assignedDate === today)
         .map((p) => ({ p, c: clientById(p.clientId) }))
-        .filter(({ c }) => c && c.zone && m.zones.includes(c.zone));
+        .filter(({ c }) => c && c.province && m.zones.includes(c.province));
 
       const totalCost = entries.reduce((sum, { p }) => sum + (Number(p.cost) || 0), 0);
       const zoneLabel = m.zones.join(', ') || 'Sin zona asignada';
@@ -573,8 +652,8 @@
           <td>${hasOrigin ? `<a href="${esc(m.origin)}" target="_blank" rel="noopener">Ver mapa</a>` : `<span class="text-muted">Sin ubicación</span>`}</td>
           <td><span class="tag tag-neutral">${esc(m.zones.join(', ') || 'Sin zona')}</span></td>
           <td style="text-align:right;white-space:nowrap">
-            <button class="btn btn-ghost" type="button" data-action="edit-messenger" data-id="${m.id}">Editar</button>
-            <button class="btn btn-ghost" type="button" data-action="delete-messenger" data-id="${m.id}">Eliminar</button>
+            <button class="btn btn-icon btn-ghost" type="button" data-action="edit-messenger" data-id="${m.id}" aria-label="Editar" title="Editar">${ICONS.edit}</button>
+            <button class="btn btn-icon btn-ghost" type="button" data-action="delete-messenger" data-id="${m.id}" aria-label="Eliminar" title="Eliminar">${ICONS.trash}</button>
           </td>
         </tr>`;
     }).join('\n');
@@ -584,7 +663,7 @@
         <h1 style="margin-bottom:2px">${editing ? 'Editar mensajero' : 'Agregar mensajero'}</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Nombre, teléfono para WhatsApp y las provincias que cubre cada mensajero.</p>
 
-        <div class="card elev-sm" style="max-width:560px;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="messenger-form-card" style="max-width:560px;margin-bottom:var(--space-8)">
           <div class="field">
             <label>Nombre *</label>
             <input class="input" id="messenger-name" type="text" value="${esc(f.name)}" placeholder="Ej: Mensajero 1">
@@ -624,7 +703,7 @@
   // ── actions ──────────────────────────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
-    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', zone: '' }; }
+    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' }; }
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '' }; }
     if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; }
     render();
@@ -634,23 +713,28 @@
     const name = document.getElementById('client-name').value;
     const phone = document.getElementById('client-phone').value;
     const address = document.getElementById('client-address').value;
-    const zone = document.getElementById('client-zone').value;
+    const addressDetails = document.getElementById('client-address-details').value;
+    const province = document.getElementById('client-province').value;
+    const canton = document.getElementById('client-canton').value;
     if (!name.trim() || !phone.trim()) return;
     await withBusy(async () => {
       if (state.clientEditingId) {
-        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), address: address.trim(), zone });
+        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       } else {
-        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), address: address.trim(), zone });
+        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       }
       await reloadClients();
       state.clientEditingId = null;
-      state.clientDraft = { name: '', phone: '', address: '', zone: '' };
+      state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
       render();
     });
   }
 
-  async function deleteClient(id) {
-    if (!window.confirm('¿Eliminar este cliente? Sus paquetes asignados quedarán pendientes.')) return;
+  function deleteClient(id) {
+    askConfirm('Eliminar cliente', '¿Eliminar este cliente? Sus paquetes asignados quedarán pendientes.', () => doDeleteClient(id));
+  }
+
+  async function doDeleteClient(id) {
     await withBusy(async () => {
       await LF.db.deleteClient(id);
       await Promise.all([reloadClients(), reloadPackages()]);
@@ -678,8 +762,11 @@
     });
   }
 
-  async function markArrived(id) {
-    if (!window.confirm('¿Confirmas que este paquete ya está aquí y listo para el mensajero?')) return;
+  function markArrived(id) {
+    askConfirm('Confirmar llegada', '¿Confirmas que este paquete ya está aquí y listo para el mensajero?', () => doMarkArrived(id), 'Confirmar');
+  }
+
+  async function doMarkArrived(id) {
     await withBusy(async () => {
       await LF.db.markArrived(id, todayISO());
       await reloadPackages();
@@ -687,8 +774,11 @@
     });
   }
 
-  async function unassignPkg(id) {
-    if (!window.confirm('¿Quitar este paquete de la ruta de hoy? Volverá a pendientes por asignar.')) return;
+  function unassignPkg(id) {
+    askConfirm('Quitar paquete', '¿Quitar este paquete de la ruta de hoy? Volverá a pendientes por asignar.', () => doUnassignPkg(id), 'Quitar');
+  }
+
+  async function doUnassignPkg(id) {
     await withBusy(async () => {
       await LF.db.unassignPackage(id);
       await reloadPackages();
@@ -716,8 +806,11 @@
     });
   }
 
-  async function deleteMessenger(id) {
-    if (!window.confirm('¿Eliminar este mensajero? Las zonas que cubre quedarán sin mensajero asignado.')) return;
+  function deleteMessenger(id) {
+    askConfirm('Eliminar mensajero', '¿Eliminar este mensajero? Las zonas que cubre quedarán sin mensajero asignado.', () => doDeleteMessenger(id));
+  }
+
+  async function doDeleteMessenger(id) {
     await withBusy(async () => {
       await LF.db.deleteMessenger(id);
       await reloadMessengers();
@@ -741,12 +834,14 @@
         const c = clientById(el.dataset.id);
         if (!c) return;
         state.clientEditingId = c.id;
-        state.clientDraft = { name: c.name, phone: c.phone, address: c.address, zone: c.zone };
-        render(); return;
+        state.clientDraft = { name: c.name, phone: c.phone, address: c.address, addressDetails: c.addressDetails || '', province: c.province || '', canton: c.canton || '' };
+        render();
+        scrollToForm('client-form-card');
+        return;
       }
       case 'cancel-edit-client':
         state.clientEditingId = null;
-        state.clientDraft = { name: '', phone: '', address: '', zone: '' };
+        state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
         render(); return;
       case 'save-client': return void saveClient();
       case 'delete-client': return void deleteClient(el.dataset.id);
@@ -769,7 +864,9 @@
         if (!p) return;
         state.pkgEditingId = p.id; state.pkgSelectedClientId = p.clientId;
         state.pkgDraft = { tracking: p.tracking, weight: String(p.weight), cost: String(p.cost) };
-        render(); return;
+        render();
+        scrollToForm('pkg-form-card');
+        return;
       }
       case 'arrive-pkg': return void markArrived(el.dataset.id);
       case 'waiting-page': {
@@ -784,7 +881,9 @@
         if (!m) return;
         state.messengerEditingId = m.id; state.messengerZonesDraft = [...m.zones];
         state.messengerDraft = { name: m.name, phone: m.phone, origin: m.origin || '' };
-        render(); return;
+        render();
+        scrollToForm('messenger-form-card');
+        return;
       }
       case 'cancel-edit-messenger':
         state.messengerEditingId = null; state.messengerZonesDraft = [];
@@ -798,6 +897,9 @@
         if (i === -1) state.messengerZonesDraft.push(zone); else state.messengerZonesDraft.splice(i, 1);
         render(); return;
       }
+
+      case 'cancel-confirm': return closeConfirm();
+      case 'accept-confirm': return void acceptConfirm();
     }
   });
 
@@ -833,14 +935,22 @@
     if (id === 'client-name') { state.clientDraft.name = e.target.value; return; }
     if (id === 'client-phone') { state.clientDraft.phone = e.target.value; return; }
     if (id === 'client-address') { state.clientDraft.address = e.target.value; return; }
-    if (id === 'client-zone') { state.clientDraft.zone = e.target.value; return; }
+    if (id === 'client-address-details') { state.clientDraft.addressDetails = e.target.value; return; }
+    if (id === 'client-canton') { state.clientDraft.canton = e.target.value; return; }
     if (id === 'messenger-name') { state.messengerDraft.name = e.target.value; return; }
     if (id === 'messenger-phone') { state.messengerDraft.phone = e.target.value; return; }
     if (id === 'messenger-origin') { state.messengerDraft.origin = e.target.value; return; }
   });
 
   document.body.addEventListener('change', (e) => {
-    if (e.target.id === 'client-zone') state.clientDraft.zone = e.target.value;
+    if (e.target.id === 'client-province') {
+      // Changing province invalidates whatever canton was picked for the old
+      // one, so clear it — a full render() also refreshes the canton
+      // <select>'s options to match the newly chosen province.
+      state.clientDraft.province = e.target.value;
+      state.clientDraft.canton = '';
+      render();
+    }
   });
 
   async function doLogin() {
