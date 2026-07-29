@@ -397,7 +397,9 @@
   // ── INICIO ───────────────────────────────────────────────────────────────
   function renderInicio() {
     const today = todayISO();
-    const assignedToday = state.packages.filter((p) => p.assignedDate === today).length;
+    const todaysPackages = state.packages.filter((p) => p.assignedDate === today);
+    const totalToday = todaysPackages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
+    const incompleteClients = state.clients.filter((c) => !c.address || !c.province).length;
     const pending = state.packages.filter((p) => !p.clientId).length;
     const esperandoLlegada = state.packages.filter((p) => p.clientId && !p.arrived).length;
 
@@ -417,9 +419,19 @@
 
         <div class="stat-grid">
           <div class="card elev-sm">
-            <div class="card-kicker">Hoy</div>
-            <div class="card-title" style="font-size:34px">${assignedToday}</div>
-            <p class="card-body">paquetes asignados</p>
+            <div class="card-kicker">Total a cobrar hoy</div>
+            <div class="card-title" style="font-size:34px">$${fmtMoney(totalToday)}</div>
+            <p class="card-body">≈ ₡${fmtCRC(totalToday * state.settings.crcRate)} · todas las rutas</p>
+          </div>
+          <div class="card elev-sm">
+            <div class="card-kicker">Falta info</div>
+            <div class="card-title" style="font-size:34px">${incompleteClients}</div>
+            <p class="card-body">clientes incompletos</p>
+          </div>
+          <div class="card elev-sm">
+            <div class="card-kicker">En tránsito</div>
+            <div class="card-title" style="font-size:34px">${esperandoLlegada}</div>
+            <p class="card-body">esperando confirmar llegada</p>
           </div>
           <div class="card elev-sm">
             <div class="card-kicker">Clientes</div>
