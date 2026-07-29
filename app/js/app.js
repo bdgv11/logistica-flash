@@ -619,6 +619,13 @@
       .map((p) => ({ p, c: clientById(p.clientId) }))
       .sort((a, b) => (a.c ? a.c.name : '').localeCompare(b.c ? b.c.name : '', 'es'));
 
+    // Packages with no client — mainly ones bounced back here via "Quitar de
+    // la ruta" in Lista del día. Without this list they'd be invisible: not
+    // in "Identificados" (that requires a client), and the confirm dialog
+    // for that action promises they come back to "pendientes por asignar".
+    const noClientPkgs = state.packages.filter((p) => !p.clientId)
+      .sort((a, b) => a.tracking.localeCompare(b.tracking));
+
     return `
       <div>
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
@@ -665,6 +672,21 @@
             ${editing ? `<button class="btn btn-secondary" type="button" data-action="cancel-pkg-edit">Cancelar</button>` : ''}
           </div>
         </div>
+
+        ${noClientPkgs.length > 0 ? `
+        <hr class="hr">
+        <h4 style="margin:var(--space-4) 0 var(--space-3)">Pendientes — sin cliente (${noClientPkgs.length})</h4>
+        <p class="text-muted" style="margin-bottom:var(--space-3)">Paquetes sin cliente asignado — por ejemplo, uno que se quitó de la ruta de un mensajero.</p>
+        <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+          ${noClientPkgs.map((p) => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap;gap:8px">
+              <div>
+                <strong style="font-family:var(--font-heading)">${esc(p.tracking)}</strong>
+                <span class="text-muted" style="margin-left:8px">${p.weight} lb · $${fmtMoney(p.cost)} · ₡${fmtCRC(p.cost * state.settings.crcRate)}</span>
+              </div>
+              <button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Identificar cliente →</button>
+            </div>`).join('\n')}
+        </div>` : ''}
 
         <hr class="hr">
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Identificados — en tránsito (${waitingAll.length})</h4>
