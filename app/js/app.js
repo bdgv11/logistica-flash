@@ -380,7 +380,7 @@
 
         <div class="card elev-sm" style="max-width:480px">
           <div class="field">
-            <label>Costo por libra ($/lb)</label>
+            <label>Peso por libra ($/lb)</label>
             <input class="input" id="settings-rate-per-lb" type="number" step="0.01" min="0" value="${esc(s.ratePerLb)}">
             <p class="text-muted" style="margin-top:4px;font-size:13px">Se usa para calcular el costo estimado al registrar un paquete.</p>
           </div>
@@ -760,15 +760,23 @@
       const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
 
-      const invoiceMessage = (p, c) => {
-        const costCRC = fmtCRC(p.cost * state.settings.crcRate);
-        return `Hola ${c.name}, aquí el detalle de tu paquete:\n\nTracking: ${p.tracking}\nPeso: ${p.weight} lb\nTotal a pagar: ₡${costCRC} ($${fmtMoney(p.cost)} USD)\n\nGracias por confiar en Logística Flash.`;
+      // One invoice per client (stop), covering every package they have
+      // today — not one message per package, so a 3-package client gets a
+      // single combined factura instead of 3 separate WhatsApp messages.
+      const invoiceMessageForStop = (stop) => {
+        const totalWeight = stop.packages.reduce((sum, p) => sum + (Number(p.weight) || 0), 0);
+        const totalCost = stop.packages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
+        const trackings = stop.packages.map((p) => p.tracking).join(', ');
+        const costCRC = fmtCRC(totalCost * state.settings.crcRate);
+        const pkgWord = stop.packages.length === 1 ? 'tu paquete' : 'tus paquetes';
+        return `Hola ${stop.c.name}, aquí el detalle de ${pkgWord}:\n\nPaquetes: ${stop.packages.length}\nTracking: ${trackings}\nPeso total: ${totalWeight} lb\nTotal a pagar: ₡${costCRC} ($${fmtMoney(totalCost)} USD)\n\nGracias por confiar en Logística Flash.`;
       };
-      const invoiceHref = (p, c) => `https://wa.me/${waPhone(c.phone)}?text=${encodeURIComponent(invoiceMessage(p, c))}`;
+      const invoiceHrefForStop = (stop) => `https://wa.me/${waPhone(stop.c.phone)}?text=${encodeURIComponent(invoiceMessageForStop(stop))}`;
 
-      const rows = orderedStops.flatMap((stop) => stop.packages.map((p) => {
+      const rows = orderedStops.flatMap((stop) => {
         const hasPhone = !!(stop.c.phone && stop.c.phone.trim());
-        return `
+        const stopInvoiceHref = hasPhone ? invoiceHrefForStop(stop) : '';
+        return stop.packages.map((p) => `
         <tr>
           <td>${esc(stop.c.name)}</td>
           <td><a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a></td>
@@ -778,12 +786,12 @@
           <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
           <td style="text-align:right">
             <div style="display:inline-flex;gap:6px">
-              <button class="btn btn-icon btn-ghost" type="button" data-action="send-invoice" data-href="${esc(hasPhone ? invoiceHref(p, stop.c) : '')}" aria-label="Enviar factura por WhatsApp" title="Enviar factura por WhatsApp" ${hasPhone ? '' : 'disabled'} style="color:#25D366">${ICONS.whatsappMono}</button>
+              <button class="btn btn-icon btn-ghost" type="button" data-action="send-invoice" data-href="${esc(stopInvoiceHref)}" aria-label="Enviar factura por WhatsApp" title="Enviar factura por WhatsApp" ${hasPhone ? '' : 'disabled'} style="color:#25D366">${ICONS.whatsappMono}</button>
               <button class="btn btn-icon btn-ghost" type="button" data-action="unassign-pkg" data-id="${p.id}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">${ICONS.trash}</button>
             </div>
           </td>
-        </tr>`;
-      })).join('\n');
+        </tr>`);
+      }).join('\n');
 
       return `
         <div class="card elev-sm">
@@ -813,7 +821,7 @@
             <a href="${esc(waHref)}" target="_blank" rel="noopener" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none">
               ${ICONS.whatsapp}<span>Enviar lista por WhatsApp</span>
             </a>
-            <button type="button" data-action="send-all-invoices" data-hrefs="${esc(JSON.stringify(orderedStops.flatMap((stop) => stop.c.phone && stop.c.phone.trim() ? stop.packages.map((p) => invoiceHref(p, stop.c)) : [])))}" ${entries.length === 0 ? 'disabled' : ''} class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
+            <button type="button" data-action="send-all-invoices" data-hrefs="${esc(JSON.stringify(orderedStops.filter((stop) => stop.c.phone && stop.c.phone.trim()).map((stop) => invoiceHrefForStop(stop))))}" ${entries.length === 0 ? 'disabled' : ''} class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
               ${ICONS.invoice}<span>Enviar facturas a clientes</span>
             </button>
           </div>
