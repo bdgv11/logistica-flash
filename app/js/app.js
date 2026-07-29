@@ -578,7 +578,20 @@
       const totalCost = entries.reduce((sum, { p }) => sum + (Number(p.cost) || 0), 0);
       const zoneLabel = m.zones.join(', ') || 'Sin zona asignada';
 
-      const lines = entries.map(({ p, c }, i) => `${i + 1}. ${c.name}\nDireccion: ${c.address}\nTelefono: ${c.phone}\nTracking: ${p.tracking}`);
+      // Group by client so a client with several packages today gets one
+      // stop listing all their tracking IDs, instead of repeating their
+      // name/address/phone once per package.
+      const stopsByClient = new Map();
+      const stops = [];
+      entries.forEach(({ p, c }) => {
+        let stop = stopsByClient.get(c.id);
+        if (!stop) { stop = { c, trackings: [] }; stopsByClient.set(c.id, stop); stops.push(stop); }
+        stop.trackings.push(p.tracking);
+      });
+      const lines = stops.map((stop, i) => {
+        const detailLine = stop.c.addressDetails ? `\nDetalle: ${stop.c.addressDetails}` : '';
+        return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${stop.trackings.length}\nTracking: ${stop.trackings.join(', ')}`;
+      });
       const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
 
