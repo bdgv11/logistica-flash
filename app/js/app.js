@@ -96,6 +96,7 @@
     confirmMessage: '',
     confirmActionLabel: 'Eliminar',
     confirmAction: null,
+    invoiceQueue: null,
   };
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -839,13 +840,23 @@
             </table>
           </div>
           ${entries.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-2)">Sin paquetes asignados hoy.</p>` : ''}
-          <div style="margin-top:var(--space-3);display:flex;flex-wrap:wrap;gap:10px">
+          <div style="margin-top:var(--space-3);display:flex;flex-wrap:wrap;align-items:center;gap:10px">
             <a href="${esc(waHref)}" target="_blank" rel="noopener" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none">
               ${ICONS.whatsapp}<span>Enviar lista por WhatsApp</span>
             </a>
-            <button type="button" data-action="send-all-invoices" data-hrefs="${esc(JSON.stringify(orderedStops.filter((stop) => stop.c.phone && stop.c.phone.trim()).map((stop) => invoiceHrefForStop(stop))))}" ${entries.length === 0 ? 'disabled' : ''} class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
-              ${ICONS.invoice}<span>Enviar facturas a clientes</span>
-            </button>
+            ${state.invoiceQueue && state.invoiceQueue.messengerId === m.id ? `
+              ${state.invoiceQueue.index < state.invoiceQueue.hrefs.length ? `
+                <span class="text-muted">Factura ${state.invoiceQueue.index} de ${state.invoiceQueue.hrefs.length} enviada</span>
+                <button type="button" data-action="send-invoice-next" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
+                  ${ICONS.invoice}<span>Enviar siguiente (${state.invoiceQueue.index + 1} de ${state.invoiceQueue.hrefs.length}) →</span>
+                </button>
+                <button type="button" data-action="cancel-invoice-queue" class="btn btn-ghost">Cancelar</button>
+              ` : `<span class="tag tag-accent">Facturas enviadas: ${state.invoiceQueue.hrefs.length} de ${state.invoiceQueue.hrefs.length} ✓</span>`}
+            ` : `
+              <button type="button" data-action="send-all-invoices" data-messenger-id="${m.id}" data-hrefs="${esc(JSON.stringify(orderedStops.filter((stop) => stop.c.phone && stop.c.phone.trim()).map((stop) => invoiceHrefForStop(stop))))}" ${entries.length === 0 ? 'disabled' : ''} class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:transparent;color:#1f9e56;border:1.5px solid #25D366;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md)">
+                ${ICONS.invoice}<span>Enviar facturas a clientes</span>
+              </button>
+            `}
           </div>
         </div>`;
     }).join('\n');
@@ -1115,17 +1126,37 @@
         return;
       }
       case 'send-all-invoices': {
+        // A browser only trusts a pop-up as "real" when window.open() fires
+        // synchronously inside the click that triggered it — it has no way
+        // to open several new tabs from one click without asking first, and
+        // there's no real API-based send available without a whole separate
+        // WhatsApp Business API setup (Meta business account, dedicated
+        // number, approved templates). So: open the first invoice right now
+        // (that one's a trusted gesture), then queue the rest behind an
+        // explicit "Enviar siguiente" button — every click on that is its
+        // own trusted gesture too, so none of them get blocked.
         let hrefs = [];
         try { hrefs = JSON.parse(el.dataset.hrefs || '[]'); } catch (err) { hrefs = []; }
-        // Every window.open() must fire synchronously inside this click
-        // handler — a browser only trusts pop-ups tied directly to the user
-        // gesture that triggered them. A setTimeout (even 0ms) breaks that
-        // link for every open after the first, which is why only one
-        // message was going out before: the rest were being silently
-        // blocked as pop-ups, not actually failing to build correctly.
-        hrefs.forEach((href) => window.open(href, '_blank'));
+        if (!hrefs.length) return;
+        window.open(hrefs[0], '_blank');
+        if (hrefs.length > 1) {
+          state.invoiceQueue = { messengerId: el.dataset.messengerId, hrefs, index: 1 };
+        }
+        render();
         return;
       }
+      case 'send-invoice-next': {
+        const q = state.invoiceQueue;
+        if (!q || q.index >= q.hrefs.length) return;
+        window.open(q.hrefs[q.index], '_blank');
+        q.index += 1;
+        render();
+        return;
+      }
+      case 'cancel-invoice-queue':
+        state.invoiceQueue = null;
+        render();
+        return;
 
       case 'edit-messenger': {
         const m = state.messengers.find((x) => x.id === el.dataset.id);
