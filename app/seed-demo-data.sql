@@ -1,16 +1,23 @@
 -- Logística Flash — datos de prueba para una prueba con volumen real
 -- Corre esto una sola vez en Supabase (Project > SQL Editor > New query).
 -- Crea: 4 mensajeros (uno por zona), 20 clientes repartidos en esas 4
--- zonas, y ~26 paquetes ya identificados con esos clientes (algunos
--- marcados como "llegado hoy" -> aparecen en Lista del día; el resto queda
--- en "Identificados — en tránsito", esperando llegar).
+-- zonas, y 34 paquetes repartidos en 3 estados para poder probar TODAS
+-- las pantallas de una vez:
+--   - 20 "ya enviados" (uno por cliente), con fechas de envío variadas
+--     en las últimas semanas -> llenan Historial (2 páginas, para
+--     probar filtros de fecha/monto/mensajero y el Exportar a Excel).
+--   - 10 "activos hoy" (la mitad de los clientes, repartidos entre las
+--     4 zonas) -> aparecen en Lista del día, listos para probar el
+--     ordenamiento de ruta, las facturas y el botón de marcar enviado.
+--   - 4 "esperando llegada" (uno por zona) -> aparecen en
+--     "Identificados — en tránsito", listos para el botón de llegada.
 --
 -- No borra nada, solo agrega — corre sin problema aunque ya tengas
 -- mensajeros o clientes reales cargados. Pero no lo corras dos veces
 -- seguidas: no valida duplicados, así que la segunda corrida te deja
 -- 8 mensajeros y 40 clientes repitiendo estos mismos nombres.
 -- Si ya corriste reset-data.sql antes, esto te deja la app lista para
--- probar con una cantidad realista de clientes/paquetes en el momento.
+-- probar con una cantidad realista de datos en el momento.
 
 -- ── Mensajeros ────────────────────────────────────────────────────────────
 insert into public.messengers (name, phone, origin, zones) values
@@ -50,28 +57,45 @@ numbered as (
 rate as (
   select coalesce((select rate_per_lb from public.app_settings where id = 1), 4.25) as rate_per_lb
 ),
--- Cada cliente recibe 1 paquete; 1 de cada 3 recibe un segundo paquete
--- (para simular clientes con varios paquetes el mismo día). El primer
--- paquete de cada cliente queda marcado "llegado hoy" (sale en Lista del
--- día); el segundo, si existe, queda esperando llegada. MATERIALIZED
--- fuerza a que el peso aleatorio se calcule una sola vez por fila (si no,
--- Postgres puede evaluar random() una sola vez para toda la consulta).
+-- MATERIALIZED fuerza a que el peso aleatorio se calcule una sola vez por
+-- fila (si no, Postgres puede evaluar random() una sola vez para toda la
+-- consulta y dejar el mismo peso en todos los paquetes).
 expanded as materialized (
-  select
-    n.id as client_id,
-    n.rn,
-    g as pkg_num,
-    round((1 + random() * 7)::numeric, 1) as weight
+  -- Bucket 1: ya enviado — todos los clientes, fechas repartidas en las
+  -- últimas semanas (más atrás mientras más alto el número de cliente).
+  select n.id as client_id, n.rn, 1 as pkg_num, 'sent' as status,
+         round((1 + random() * 7)::numeric, 1) as weight
   from numbered n
-  cross join lateral generate_series(1, case when n.rn % 3 = 0 then 2 else 1 end) as g
+
+  union all
+
+  -- Bucket 2: activo hoy en Lista del día — la mitad de los clientes,
+  -- repartidos entre las 4 zonas (números impares).
+  select n.id, n.rn, 2, 'active',
+         round((1 + random() * 7)::numeric, 1)
+  from numbered n
+  where n.rn % 2 = 1
+
+  union all
+
+  -- Bucket 3: esperando llegada — uno por zona (el último cliente de
+  -- cada bloque de 5).
+  select n.id, n.rn, 3, 'waiting',
+         round((1 + random() * 7)::numeric, 1)
+  from numbered n
+  where n.rn % 5 = 0
 )
-insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date)
+insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date, sent, sent_date)
 select
   'TBA9' || lpad((e.rn * 10 + e.pkg_num)::text, 6, '0'),
   e.weight,
   round(e.weight * r.rate_per_lb, 2),
   e.client_id,
-  (e.pkg_num = 1),
-  case when e.pkg_num = 1 then current_date else null end
+  e.status <> 'waiting',
+  case when e.status = 'active' then current_date
+       when e.status = 'sent' then current_date - (e.rn * 2)::int
+       else null end,
+  e.status = 'sent',
+  case when e.status = 'sent' then current_date - (e.rn * 2)::int else null end
 from expanded e
 cross join rate r;
