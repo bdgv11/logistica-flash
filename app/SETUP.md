@@ -77,12 +77,14 @@ propio — Supabase es el backend.
 
 ## Algo que vale la pena revisar con el equipo
 
-En el diseño final (ver `chats/chat1.md`), un paquete se crea **siempre**
-con un cliente ya asignado — no existe una pantalla para volver a
-identificar un paquete que quedó "sin cliente" (por ejemplo, tras usar el
-botón de basurero en "Lista del día" para quitarlo de la ruta, o alguno de
-los paquetes de ejemplo). Esos paquetes solo se cuentan en el contador
-"Sin identificar" de Inicio, pero no hay manera de volver a asignarles un
-cliente desde la interfaz — quedan huérfanos. Lo implementé tal cual quedó
-en el diseño, pero si les va a pasar en la práctica (se equivocan y quitan un
-paquete de la ruta), avísenme y agrego una forma sencilla de retomarlos.
+Quitar un paquete de la ruta (el basurero en "Lista del día") ya no lo deja
+huérfano — vuelve a "Identificados — en tránsito" con el mismo cliente, y
+cualquier cambio (monto, cliente, etc.) se hace desde ahí con el flujo
+normal de edición.
+
+El único caso que todavía puede dejar un paquete sin cliente es eliminar un
+cliente que tiene paquetes activos (el diálogo de confirmación ya avisa de
+esto). Ese contador aparece en "Sin identificar" en Inicio, pero no hay
+pantalla para reasignarle un cliente desde la interfaz — es un caso raro
+(requiere borrar un cliente a propósito), pero si les llega a pasar en la
+práctica, avísenme y agrego una forma sencilla de retomarlos.
