@@ -33,6 +33,11 @@
     }[c]));
   }
 
+  const DIACRITICS_RE = new RegExp('[̀-ͯ]', 'g');
+  function normalize(v) {
+    return String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(DIACRITICS_RE, '');
+  }
+
   function todayISO() { return new Date().toISOString().slice(0, 10); }
 
   function todayLabel() {
@@ -107,6 +112,13 @@
     shellRoot.style.display = '';
     navRoot.innerHTML = renderNav();
     mainRoot.innerHTML = renderMain();
+    // renderMain() leaves #waiting-list as an empty container on the
+    // "paquete" tab — its rows are filled in separately so search/pagination
+    // there can update without re-rendering the form above it. Any other
+    // action that calls render() while on this tab must refill it too, or
+    // the list silently disappears until something else refills it.
+    if (state.tab === 'paquete') renderWaitingList();
+    if (state.tab === 'clientes') renderClientList();
   }
 
   // ── login ────────────────────────────────────────────────────────────────
@@ -242,28 +254,6 @@
     const editing = state.clientEditingId ? clientById(state.clientEditingId) : null;
     const f = state.clientDraft;
 
-    const sorted = [...state.clients].sort((a, b) => a.name.localeCompare(b.name, 'es'));
-    const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-    const page = Math.min(Math.max(1, state.clientsPage), totalPages);
-    const pageClients = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-    const rows = pageClients.map((c) => {
-      const incomplete = !c.address || !c.zone;
-      return `
-        <tr>
-          <td>${esc(c.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Falta info</span>' : ''}</td>
-          <td><span class="tag tag-neutral">${esc(c.zone || 'Sin zona')}</span></td>
-          <td>${esc(c.phone)}</td>
-          <td>${c.address
-            ? `<a href="${esc(c.address)}" target="_blank" rel="noopener">Ver ubicación</a>`
-            : `<span class="text-muted">Sin dirección</span>`}</td>
-          <td style="text-align:right;white-space:nowrap">
-            <button class="btn btn-icon btn-ghost" type="button" data-action="edit-client" data-id="${c.id}" aria-label="Editar" title="Editar">${ICONS.edit}</button>
-            <button class="btn btn-icon btn-ghost" type="button" data-action="delete-client" data-id="${c.id}" aria-label="Eliminar" title="Eliminar">${ICONS.trash}</button>
-          </td>
-        </tr>`;
-    }).join('\n');
-
     return `
       <div>
         <h1 style="margin-bottom:2px">${editing ? 'Editar cliente' : 'Agregar cliente'}</h1>
@@ -298,27 +288,70 @@
         <hr class="hr">
 
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Clientes guardados (${state.clients.length})</h4>
-        <div class="table-scroll">
-          <table class="table">
-            <thead><tr><th>Nombre</th><th>Zona</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
+        <div class="field" style="max-width:320px">
+          <label>Buscar por nombre, teléfono o zona</label>
+          <input class="input" id="client-search" type="text" placeholder="Ej: María, 8888-1234 o Heredia">
         </div>
-        ${state.clients.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-3)">Aún no hay clientes guardados.</p>` : ''}
-        ${totalPages > 1 ? `
-          <div class="pagination-row">
-            <button class="btn btn-secondary" type="button" data-action="clients-page" data-dir="prev" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
-            <span class="text-muted">Página ${page} de ${totalPages}</span>
-            <button class="btn btn-secondary" type="button" data-action="clients-page" data-dir="next" ${page >= totalPages ? 'disabled' : ''}>Siguiente →</button>
-          </div>` : ''}
+        <div id="client-list"></div>
       </div>`;
+  }
+
+  function renderClientList() {
+    const container = document.getElementById('client-list');
+    if (!container) return;
+    const searchEl = document.getElementById('client-search');
+    const q = normalize(searchEl ? searchEl.value : '').trim();
+
+    const filtered = q
+      ? state.clients.filter((c) =>
+          normalize(c.name).includes(q) ||
+          normalize(c.phone).includes(q) ||
+          normalize(c.zone).includes(q))
+      : state.clients;
+    const sorted = [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+
+    const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+    const page = Math.min(Math.max(1, state.clientsPage), totalPages);
+    const pageClients = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+    const rows = pageClients.map((c) => {
+      const incomplete = !c.address || !c.zone;
+      return `
+        <tr>
+          <td>${esc(c.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Falta info</span>' : ''}</td>
+          <td><span class="tag tag-neutral">${esc(c.zone || 'Sin zona')}</span></td>
+          <td>${esc(c.phone)}</td>
+          <td>${c.address
+            ? `<a href="${esc(c.address)}" target="_blank" rel="noopener">Ver ubicación</a>`
+            : `<span class="text-muted">Sin dirección</span>`}</td>
+          <td style="text-align:right;white-space:nowrap">
+            <button class="btn btn-icon btn-ghost" type="button" data-action="edit-client" data-id="${c.id}" aria-label="Editar" title="Editar">${ICONS.edit}</button>
+            <button class="btn btn-icon btn-ghost" type="button" data-action="delete-client" data-id="${c.id}" aria-label="Eliminar" title="Eliminar">${ICONS.trash}</button>
+          </td>
+        </tr>`;
+    }).join('\n');
+
+    container.innerHTML = `
+      <div class="table-scroll">
+        <table class="table">
+          <thead><tr><th>Nombre</th><th>Zona</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${sorted.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-3)">${q ? 'Sin coincidencias.' : 'Aún no hay clientes guardados.'}</p>` : ''}
+      ${totalPages > 1 ? `
+        <div class="pagination-row">
+          <button class="btn btn-secondary" type="button" data-action="clients-page" data-dir="prev" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
+          <span class="text-muted">Página ${page} de ${totalPages}</span>
+          <button class="btn btn-secondary" type="button" data-action="clients-page" data-dir="next" ${page >= totalPages ? 'disabled' : ''}>Siguiente →</button>
+        </div>` : ''}`;
   }
 
   // ── REGISTRAR PAQUETE ────────────────────────────────────────────────────
   function pkgMatchesHtml(query) {
-    const q = query.trim().toLowerCase();
+    const q = normalize(query).trim();
     if (!q) return '';
-    const matches = state.clients.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 6);
+    const matches = state.clients.filter((c) => normalize(c.name).includes(q)).slice(0, 6);
     if (matches.length === 0) return `<p class="text-muted">Sin coincidencias. Revisa el nombre o agrégalo en "Clientes".</p>`;
     const items = matches.map((c) => {
       const mm = messengerForZone(c.zone);
@@ -413,14 +446,14 @@
     const container = document.getElementById('waiting-list');
     if (!container) return;
     const searchEl = document.getElementById('waiting-search');
-    const wq = (searchEl ? searchEl.value : '').trim().toLowerCase();
+    const wq = normalize(searchEl ? searchEl.value : '').trim();
 
     const waitingAll = state.packages.filter((p) => p.clientId && !p.arrived)
       .map((p) => ({ p, c: clientById(p.clientId) }))
       .sort((a, b) => (a.c ? a.c.name : '').localeCompare(b.c ? b.c.name : '', 'es'));
 
     const filtered = wq
-      ? waitingAll.filter(({ p, c }) => (c && c.name.toLowerCase().includes(wq)) || p.tracking.toLowerCase().includes(wq))
+      ? waitingAll.filter(({ p, c }) => (c && normalize(c.name).includes(wq)) || normalize(p.tracking).includes(wq))
       : waitingAll;
 
     const totalPages = Math.max(1, Math.ceil(filtered.length / WAITING_PAGE_SIZE));
@@ -595,7 +628,6 @@
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '' }; }
     if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; }
     render();
-    if (tab === 'paquete') renderWaitingList();
   }
 
   async function saveClient() {
@@ -643,7 +675,6 @@
       state.pkgSelectedClientId = null;
       state.pkgDraft = { tracking: '', weight: '', cost: '' };
       render();
-      renderWaitingList();
     });
   }
 
@@ -652,7 +683,6 @@
     await withBusy(async () => {
       await LF.db.markArrived(id, todayISO());
       await reloadPackages();
-      renderWaitingList();
       render();
     });
   }
@@ -721,11 +751,8 @@
       case 'save-client': return void saveClient();
       case 'delete-client': return void deleteClient(el.dataset.id);
       case 'clients-page': {
-        const sorted = state.clients;
-        const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-        const cur = Math.min(Math.max(1, state.clientsPage), totalPages);
-        state.clientsPage = el.dataset.dir === 'next' ? Math.min(totalPages, cur + 1) : Math.max(1, cur - 1);
-        render(); return;
+        state.clientsPage = el.dataset.dir === 'next' ? state.clientsPage + 1 : Math.max(1, state.clientsPage - 1);
+        renderClientList(); return;
       }
 
       case 'select-pkg-client':
@@ -798,6 +825,11 @@
       renderWaitingList();
       return;
     }
+    if (id === 'client-search') {
+      state.clientsPage = 1;
+      renderClientList();
+      return;
+    }
     if (id === 'client-name') { state.clientDraft.name = e.target.value; return; }
     if (id === 'client-phone') { state.clientDraft.phone = e.target.value; return; }
     if (id === 'client-address') { state.clientDraft.address = e.target.value; return; }
@@ -839,7 +871,6 @@
     if (session) await reloadAll();
     state.loading = false;
     render();
-    if (state.tab === 'paquete') renderWaitingList();
 
     LF.auth.onAuthStateChange(async (session) => {
       const hadSession = !!state.session;
