@@ -129,7 +129,7 @@ window.LF = window.LF || {};
 
     async unassignPackage(id) {
       const { data, error } = await sb().from('packages')
-        .update({ client_id: null, arrived: false, assigned_date: null })
+        .update({ arrived: false, assigned_date: null })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
