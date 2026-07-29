@@ -762,7 +762,7 @@
         const stopCostCRC = fmtCRC(stopCost * state.settings.crcRate);
         return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${trackings.length}\nTracking: ${trackings.join(', ')}\nMonto a cobrar: ₡${stopCostCRC} ($${fmtMoney(stopCost)} USD)`;
       });
-      const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n');
+      const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
 
       // One invoice per client (stop), covering every package they have
