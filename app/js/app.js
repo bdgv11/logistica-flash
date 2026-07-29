@@ -422,16 +422,6 @@
             <p class="card-body">paquetes asignados</p>
           </div>
           <div class="card elev-sm">
-            <div class="card-kicker">Sin identificar</div>
-            <div class="card-title" style="font-size:34px">${pending}</div>
-            <p class="card-body">paquetes sin cliente</p>
-          </div>
-          <div class="card elev-sm">
-            <div class="card-kicker">En bodega</div>
-            <div class="card-title" style="font-size:34px">${esperandoLlegada}</div>
-            <p class="card-body">esperando llegada</p>
-          </div>
-          <div class="card elev-sm">
             <div class="card-kicker">Clientes</div>
             <div class="card-title" style="font-size:34px">${state.clients.length}</div>
             <p class="card-body">clientes guardados</p>
