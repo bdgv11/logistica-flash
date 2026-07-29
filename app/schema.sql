@@ -55,9 +55,11 @@ create table if not exists public.packages (
   arrived       boolean not null default false,
   assigned_date date,
   sent          boolean not null default false,
+  sent_date     date,
   created_at    timestamptz not null default now()
 );
 alter table public.packages add column if not exists sent boolean not null default false;
+alter table public.packages add column if not exists sent_date date;
 
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);

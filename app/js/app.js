@@ -97,6 +97,8 @@
     confirmActionLabel: 'Eliminar',
     confirmAction: null,
     invoiceQueue: null,
+    historyFilters: { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
+    historyPage: 1,
   };
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -238,6 +240,8 @@
     whatsapp: '<svg width="18" height="18" viewBox="0 0 32 32" fill="#ffffff" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>',
     whatsappMono: '<svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" style="flex:none;display:block"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.446.713 4.716 1.938 6.63L4 29l7.57-1.912A11.9 11.9 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 21.7c-1.98 0-3.83-.55-5.41-1.5l-.386-.23-4.24 1.07 1.12-4.13-.25-.4A9.66 9.66 0 0 1 5.3 15c0-5.9 4.8-10.7 10.7-10.7S26.7 9.1 26.7 15 21.9 24.7 16 24.7zm5.94-7.98c-.32-.16-1.9-.94-2.2-1.05-.29-.11-.5-.16-.72.16-.21.32-.82 1.05-1 1.26-.19.21-.37.24-.69.08-1.86-.93-3.08-1.66-4.31-3.76-.33-.56.33-.52.94-1.73.1-.21.05-.4-.05-.56-.1-.16-.72-1.73-.98-2.37-.26-.62-.53-.53-.72-.54-.19-.01-.4-.01-.61-.01-.21 0-.55.08-.85.4-.29.32-1.13 1.11-1.13 2.7 0 1.6 1.16 3.14 1.32 3.36.16.21 2.24 3.42 5.44 4.66 2.7 1.05 3.24.85 3.83.8.58-.06 1.9-.78 2.17-1.53.27-.75.27-1.4.19-1.53-.08-.14-.29-.21-.61-.37z"></path></svg>',
     invoice: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg>',
+    check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>',
+    download: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
   };
 
   // ── DOM roots ────────────────────────────────────────────────────────────
@@ -271,6 +275,7 @@
     // the list silently disappears until something else refills it.
     if (state.tab === 'paquete') renderWaitingList();
     if (state.tab === 'clientes') renderClientList();
+    if (state.tab === 'historial') renderHistoryList();
   }
 
   // ── confirm modal ────────────────────────────────────────────────────────
@@ -342,8 +347,8 @@
 
   // ── nav ──────────────────────────────────────────────────────────────────
   const TABS = [
-    ['inicio', 'Inicio'], ['clientes', 'Clientes'], ['paquete', 'Registrar paquete'],
-    ['lista', 'Lista del día'], ['mensajeros', 'Mensajeros'], ['config', 'Configuración'],
+    ['inicio', 'Inicio'], ['historial', 'Historial'], ['paquete', 'Registrar paquete'],
+    ['lista', 'Lista del día'], ['clientes', 'Clientes'], ['mensajeros', 'Mensajeros'], ['config', 'Configuración'],
   ];
   function renderNav() {
     const links = TABS.map(([id, label]) =>
@@ -367,6 +372,7 @@
       case 'lista': return renderLista();
       case 'mensajeros': return renderMensajeros();
       case 'config': return renderConfig();
+      case 'historial': return renderHistorial();
       default: return renderInicio();
     }
   }
@@ -796,6 +802,7 @@
           <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
           <td style="text-align:right">
             <div style="display:inline-flex;gap:6px">
+              <button class="btn btn-icon btn-ghost" type="button" data-action="mark-sent-one" data-id="${p.id}" aria-label="Marcar como enviado" title="Marcar como enviado">${ICONS.check}</button>
               <button class="btn btn-icon btn-ghost" type="button" data-action="send-invoice" data-href="${esc(stopInvoiceHref)}" aria-label="Enviar factura por WhatsApp" title="Enviar factura por WhatsApp" ${hasPhone ? '' : 'disabled'} style="color:#25D366">${ICONS.whatsappMono}</button>
               <button class="btn btn-icon btn-ghost" type="button" data-action="unassign-pkg" data-id="${p.id}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">${ICONS.trash}</button>
             </div>
@@ -933,6 +940,133 @@
       </div>`;
   }
 
+  // ── HISTORIAL ────────────────────────────────────────────────────────────
+  // Paquetes ya marcados "enviado", como registro para filtrar y exportar —
+  // no como flujo activo (esos ya salieron de Lista del día).
+  function getHistoryRows() {
+    const f = state.historyFilters;
+    const q = normalize(f.client).trim();
+    return state.packages
+      .filter((p) => p.sent)
+      .map((p) => {
+        const c = clientById(p.clientId);
+        const mm = c ? messengerForZone(c.province) : null;
+        return {
+          id: p.id,
+          tracking: p.tracking,
+          cost: Number(p.cost) || 0,
+          clientName: c ? c.name : 'Cliente eliminado',
+          messengerId: mm ? mm.id : null,
+          messengerName: mm ? mm.name : 'Sin mensajero',
+          sentDate: p.sentDate || '',
+        };
+      })
+      .filter((r) => !q || normalize(r.clientName).includes(q))
+      .filter((r) => !f.messengerId || r.messengerId === f.messengerId)
+      .filter((r) => !f.dateFrom || (r.sentDate && r.sentDate >= f.dateFrom))
+      .filter((r) => !f.dateTo || (r.sentDate && r.sentDate <= f.dateTo))
+      .filter((r) => !f.minAmount || r.cost >= parseFloat(f.minAmount))
+      .sort((a, b) => (b.sentDate || '').localeCompare(a.sentDate || ''));
+  }
+
+  function renderHistorial() {
+    const f = state.historyFilters;
+    return `
+      <div>
+        <h1 style="margin-bottom:2px">Historial de entregas</h1>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Paquetes ya marcados como enviados. Filtra y descarga el detalle en Excel.</p>
+
+        <div class="card elev-sm" style="margin-bottom:var(--space-4)">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--space-3)">
+            <div class="field">
+              <label>Cliente</label>
+              <input class="input" id="history-client" type="text" value="${esc(f.client)}" placeholder="Buscar por nombre">
+            </div>
+            <div class="field">
+              <label>Mensajero</label>
+              <select class="input" id="history-messenger">
+                <option value="">Todos</option>
+                ${state.messengers.map((m) => `<option value="${esc(m.id)}" ${f.messengerId === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field">
+              <label>Desde</label>
+              <input class="input" id="history-date-from" type="date" value="${esc(f.dateFrom)}">
+            </div>
+            <div class="field">
+              <label>Hasta</label>
+              <input class="input" id="history-date-to" type="date" value="${esc(f.dateTo)}">
+            </div>
+            <div class="field">
+              <label>Monto mínimo ($)</label>
+              <input class="input" id="history-min-amount" type="number" step="0.01" min="0" value="${esc(f.minAmount)}" placeholder="0.00">
+            </div>
+          </div>
+          <button class="btn btn-ghost" type="button" data-action="clear-history-filters" style="margin-top:var(--space-2)">Limpiar filtros</button>
+        </div>
+
+        <div id="history-list"></div>
+      </div>`;
+  }
+
+  function renderHistoryList() {
+    const container = document.getElementById('history-list');
+    if (!container) return;
+    const rows = getHistoryRows();
+    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    const page = Math.min(Math.max(1, state.historyPage), totalPages);
+    const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+    const tableRows = pageRows.map((h) => `
+      <tr>
+        <td>${esc(h.clientName)}</td>
+        <td>${esc(h.tracking)}</td>
+        <td>${esc(h.messengerName)}</td>
+        <td>$${fmtMoney(h.cost)}</td>
+        <td>₡${fmtCRC(h.cost * state.settings.crcRate)}</td>
+        <td>${esc(h.sentDate || '—')}</td>
+      </tr>`).join('\n');
+
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:var(--space-3)">
+        <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${rows.length}</span><span>entregas</span></span>
+        <button class="btn btn-secondary" type="button" data-action="export-history-csv" style="gap:8px" ${rows.length === 0 ? 'disabled' : ''}>
+          ${ICONS.download}<span>Exportar a Excel</span>
+        </button>
+      </div>
+      <div class="table-scroll">
+        <table class="table" style="min-width:640px">
+          <thead><tr><th>Cliente</th><th>Tracking</th><th>Mensajero</th><th>Costo ($)</th><th>Costo (₡)</th><th>Fecha enviado</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+      ${rows.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-3)">No hay entregas que coincidan con estos filtros.</p>` : ''}
+      ${totalPages > 1 ? `
+        <div class="pagination-row">
+          <button class="btn btn-secondary" type="button" data-action="history-page" data-dir="prev" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
+          <span class="text-muted">Página ${page} de ${totalPages}</span>
+          <button class="btn btn-secondary" type="button" data-action="history-page" data-dir="next" ${page >= totalPages ? 'disabled' : ''}>Siguiente →</button>
+        </div>` : ''}`;
+  }
+
+  function exportHistoryCSV() {
+    const rows = getHistoryRows();
+    const header = ['Cliente', 'Tracking', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Fecha enviado'];
+    const lines = [header.join(',')].concat(rows.map((h) => [
+      h.clientName, h.tracking, h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate), h.sentDate || '',
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')));
+    const csv = '\uFEFF' + lines.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `historial-entregas-${todayISO()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // ── actions ──────────────────────────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
@@ -1025,9 +1159,21 @@
 
   async function doMarkRouteSent() {
     await withBusy(async () => {
-      await LF.db.markRouteSent();
+      await LF.db.markRouteSent(todayISO());
       await reloadPackages();
       state.invoiceQueue = null;
+      render();
+    });
+  }
+
+  function markPackageSent(id) {
+    askConfirm('Marcar como enviado', '¿Confirmas que este paquete ya fue enviado/entregado? Pasará al historial.', () => doMarkPackageSent(id), 'Confirmar');
+  }
+
+  async function doMarkPackageSent(id) {
+    await withBusy(async () => {
+      await LF.db.markPackageSent(id, todayISO());
+      await reloadPackages();
       render();
     });
   }
@@ -1128,6 +1274,18 @@
 
       case 'unassign-pkg': return void unassignPkg(el.dataset.id);
       case 'mark-route-sent': return void markRouteSent();
+      case 'mark-sent-one': return void markPackageSent(el.dataset.id);
+
+      case 'clear-history-filters':
+        state.historyFilters = { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' };
+        state.historyPage = 1;
+        render();
+        return;
+      case 'history-page': {
+        state.historyPage = el.dataset.dir === 'next' ? state.historyPage + 1 : Math.max(1, state.historyPage - 1);
+        renderHistoryList(); return;
+      }
+      case 'export-history-csv': return void exportHistoryCSV();
 
       case 'send-invoice': {
         const href = el.dataset.href;
@@ -1232,6 +1390,18 @@
     if (id === 'messenger-name') { state.messengerDraft.name = e.target.value; return; }
     if (id === 'messenger-phone') { state.messengerDraft.phone = e.target.value; return; }
     if (id === 'messenger-origin') { state.messengerDraft.origin = e.target.value; return; }
+    if (id === 'history-client') {
+      state.historyFilters.client = e.target.value;
+      state.historyPage = 1;
+      renderHistoryList();
+      return;
+    }
+    if (id === 'history-min-amount') {
+      state.historyFilters.minAmount = e.target.value;
+      state.historyPage = 1;
+      renderHistoryList();
+      return;
+    }
   });
 
   document.body.addEventListener('change', (e) => {
@@ -1248,6 +1418,25 @@
       const ratePerLb = parseFloat(document.getElementById('settings-rate-per-lb').value) || 0;
       const crcRate = parseFloat(document.getElementById('settings-crc-rate').value) || 0;
       void saveSettings(ratePerLb, crcRate);
+      return;
+    }
+    if (e.target.id === 'history-messenger') {
+      state.historyFilters.messengerId = e.target.value;
+      state.historyPage = 1;
+      renderHistoryList();
+      return;
+    }
+    if (e.target.id === 'history-date-from') {
+      state.historyFilters.dateFrom = e.target.value;
+      state.historyPage = 1;
+      renderHistoryList();
+      return;
+    }
+    if (e.target.id === 'history-date-to') {
+      state.historyFilters.dateTo = e.target.value;
+      state.historyPage = 1;
+      renderHistoryList();
+      return;
     }
   });
 

@@ -37,6 +37,7 @@ window.LF = window.LF || {};
       arrived: !!row.arrived,
       assignedDate: row.assigned_date,
       sent: !!row.sent,
+      sentDate: row.sent_date,
     };
   }
 
@@ -140,11 +141,22 @@ window.LF = window.LF || {};
     // `sent` on every arrived-but-unsent package, so the list is empty and
     // ready for the next batch whenever it's assembled (not tied to the
     // calendar day, since routes don't necessarily go out daily).
-    async markRouteSent() {
+    async markRouteSent(sentDate) {
       const { error } = await sb().from('packages')
-        .update({ sent: true })
+        .update({ sent: true, sent_date: sentDate })
         .eq('arrived', true).eq('sent', false);
       throwIfError(error);
+    },
+
+    // Same as markRouteSent but for a single package — lets an admin close
+    // out deliveries one at a time as messengers confirm them, instead of
+    // only all-at-once.
+    async markPackageSent(id, sentDate) {
+      const { data, error } = await sb().from('packages')
+        .update({ sent: true, sent_date: sentDate })
+        .eq('id', id).select().single();
+      throwIfError(error);
+      return mapPackage(data);
     },
 
     // ── settings ─────────────────────────────────────────────────────────
