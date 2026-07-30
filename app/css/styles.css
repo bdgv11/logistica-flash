@@ -7,8 +7,8 @@
   --color-surface: #eef1f7;
   --color-text: #2a251f;
   --color-divider: color-mix(in srgb, #2a251f 22%, transparent);
-  --color-accent: #1a4faa;
-  --color-accent-2: #1a4faa;
+  --color-accent: #003566;
+  --color-accent-2: #003566;
 
   --color-neutral-100: #f8f4f4;
   --color-neutral-200: #eae7e7;
@@ -20,25 +20,25 @@
   --color-neutral-800: #444141;
   --color-neutral-900: #2d2b2b;
 
-  --color-accent-100: #e8eefb;
-  --color-accent-200: #c3d3f2;
-  --color-accent-300: #93b0e6;
-  --color-accent-400: #5c85d3;
-  --color-accent-500: #2f62bb;
-  --color-accent-600: #1a4faa;
-  --color-accent-700: #123a80;
-  --color-accent-800: #0d2b5e;
-  --color-accent-900: #081b3d;
+  --color-accent-100: color-mix(in srgb, #003566 10%, white);
+  --color-accent-200: color-mix(in srgb, #003566 22%, white);
+  --color-accent-300: color-mix(in srgb, #003566 40%, white);
+  --color-accent-400: color-mix(in srgb, #003566 62%, white);
+  --color-accent-500: color-mix(in srgb, #003566 80%, white);
+  --color-accent-600: color-mix(in srgb, #003566 92%, white);
+  --color-accent-700: #003566;
+  --color-accent-800: color-mix(in srgb, #003566 85%, black);
+  --color-accent-900: color-mix(in srgb, #003566 70%, black);
 
-  --color-accent-2-100: #e8eefb;
-  --color-accent-2-200: #c3d3f2;
-  --color-accent-2-300: #93b0e6;
-  --color-accent-2-400: #5c85d3;
-  --color-accent-2-500: #2f62bb;
-  --color-accent-2-600: #1a4faa;
-  --color-accent-2-700: #123a80;
-  --color-accent-2-800: #0d2b5e;
-  --color-accent-2-900: #081b3d;
+  --color-accent-2-100: color-mix(in srgb, #003566 10%, white);
+  --color-accent-2-200: color-mix(in srgb, #003566 22%, white);
+  --color-accent-2-300: color-mix(in srgb, #003566 40%, white);
+  --color-accent-2-400: color-mix(in srgb, #003566 62%, white);
+  --color-accent-2-500: color-mix(in srgb, #003566 80%, white);
+  --color-accent-2-600: color-mix(in srgb, #003566 92%, white);
+  --color-accent-2-700: #003566;
+  --color-accent-2-800: color-mix(in srgb, #003566 85%, black);
+  --color-accent-2-900: color-mix(in srgb, #003566 70%, black);
 
   --font-heading: "Archivo", system-ui, sans-serif;
   --font-heading-weight: 800;
@@ -83,8 +83,8 @@ h6 { font-size: 13px; }
 h6 { letter-spacing: 0.08em; text-transform: uppercase; }
 p { margin: 0 0 var(--space-3); }
 a { color: var(--color-accent); text-underline-offset: 3px; }
-a:not(.btn):not(.wa-btn):not(.navlink) { color: var(--color-accent-700); }
-a:not(.btn):not(.wa-btn):not(.navlink):hover { color: var(--color-accent-600); }
+a:not(.btn):not(.wa-btn):not(.sidebar-link) { color: var(--color-accent-700); }
+a:not(.btn):not(.wa-btn):not(.sidebar-link):hover { color: var(--color-accent-600); }
 img { display: block; max-width: 100%; }
 figure { margin: 0; }
 figcaption {
@@ -182,25 +182,62 @@ textarea.input { min-height: 90px; resize: vertical; }
 .tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
 .tag-warn { background: #fdecc8; color: #8a5a00; }
 
-/* — navigation — */
-.nav {
-  display: flex; align-items: center; gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 2px solid var(--color-divider);
+/* — navigation (sidebar) — */
+.sidebar {
+  width: 250px; flex: none; background: var(--color-surface); min-height: 100vh;
+  position: sticky; top: 0; align-self: flex-start;
+  border-right: 1px solid var(--color-divider);
+  padding: 20px 14px; display: flex; flex-direction: column; gap: 2px;
 }
-.nav-brand {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 18px; margin-right: auto;
+.sidebar-brand {
+  display: flex; align-items: center; gap: 10px; font-size: 19px;
+  font-family: var(--font-heading); font-weight: 800; padding: 6px 10px 20px;
 }
-.nav a { color: inherit; text-decoration: none; font-size: 14px; }
-.nav .navlink {
-  padding: 8px 16px; border-radius: var(--radius-md);
+.sidebar-link {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border-radius: var(--radius-md);
   font-family: var(--font-heading); font-weight: 600; font-size: 14px;
   color: var(--color-text); text-decoration: none;
   transition: background .15s, color .15s;
 }
-.nav .navlink:hover { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent-700); }
-.nav .navlink[aria-current='page'] { background: var(--color-accent); color: #ffffff; }
+.sidebar-link svg { flex: none; opacity: .75; }
+.sidebar-link:hover { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent-700); }
+.sidebar-link:hover svg { opacity: 1; }
+.sidebar-link[aria-current='page'] { background: var(--color-accent); color: #ffffff; }
+.sidebar-link[aria-current='page'] svg { opacity: 1; }
+.sidebar-spacer { flex: 1; }
+.sidebar-user { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+.sidebar-avatar {
+  width: 36px; height: 36px; flex: none; border-radius: 50%;
+  background: var(--color-accent-100); color: var(--color-accent-700);
+  display: flex; align-items: center; justify-content: center;
+}
+.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-name {
+  font-family: var(--font-heading); font-weight: 700; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sidebar-logout { font-size: 12px; color: var(--color-accent-700); text-decoration: none; }
+
+/* Below tablet width, a 250px fixed-column sidebar would eat most of the
+   screen — collapse it into a horizontal, wrapping bar instead (the same
+   shape the old top nav used) so the app stays usable one-handed on a phone. */
+@media (max-width: 768px) {
+  .app-shell { flex-direction: column; }
+  .sidebar {
+    width: 100%; min-height: auto; position: static;
+    border-right: none; border-bottom: 1px solid var(--color-divider);
+    flex-direction: row; flex-wrap: wrap; align-items: center;
+    padding: 12px 16px; gap: 4px 6px;
+  }
+  .sidebar-brand { padding: 4px 10px 4px 0; font-size: 16px; }
+  .sidebar-link { padding: 8px 10px; font-size: 13px; }
+  .sidebar-spacer { display: none; }
+  .sidebar-user {
+    width: 100%; padding: 10px 10px 2px;
+    border-top: 1px solid var(--color-divider); margin-top: 6px;
+  }
+}
 
 /* — tables — */
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -234,8 +271,9 @@ textarea.input { min-height: 90px; resize: vertical; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
 
 /* — app-specific layout — */
-.app-shell { min-height: 100vh; background: var(--color-bg); color: var(--color-text); }
-.app-main { max-width: 1040px; margin: 0 auto; padding: var(--space-6) var(--space-4) var(--space-8); }
+.app-shell { display: flex; min-height: 100vh; background: var(--color-bg); color: var(--color-text); }
+#nav-root { display: contents; }
+.app-main { flex: 1; min-width: 0; max-width: 1040px; margin: 0 auto; padding: var(--space-6) var(--space-4) var(--space-8); }
 .quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-6); }
 .table-scroll { overflow-x: auto; }

@@ -240,6 +240,10 @@
   // ── icons ────────────────────────────────────────────────────────────────
   const ICONS = {
     person: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>',
+    home: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
+    history: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path><path d="M12 7v5l4 2"></path></svg>',
+    truck: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>',
+    settings: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>',
     box: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="m7.5 4.27 9 5.15"></path><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path><path d="m3.3 7 8.7 5 8.7-5"></path><path d="M12 22V12"></path></svg>',
     checklist: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M12 11h4"></path><path d="M12 16h4"></path><path d="M8 11h.01"></path><path d="M8 16h.01"></path></svg>',
     edit: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>',
@@ -354,22 +358,31 @@
 
   // ── nav ──────────────────────────────────────────────────────────────────
   const TABS = [
-    ['inicio', 'Inicio'], ['historial', 'Historial'], ['paquete', 'Registrar paquete'],
-    ['lista', 'Lista del día'], ['clientes', 'Clientes'], ['mensajeros', 'Mensajeros'], ['config', 'Configuración'],
+    ['inicio', 'Inicio', 'home'], ['historial', 'Historial', 'history'], ['paquete', 'Registrar paquete', 'box'],
+    ['lista', 'Lista del día', 'checklist'], ['clientes', 'Clientes', 'person'],
+    ['mensajeros', 'Mensajeros', 'truck'], ['config', 'Configuración', 'settings'],
   ];
   function renderNav() {
-    const links = TABS.map(([id, label]) =>
-      `<a href="#" class="navlink" data-action="set-tab" data-tab="${id}" ${state.tab === id ? "aria-current='page'" : ''}>${esc(label)}</a>`
+    const links = TABS.map(([id, label, icon]) =>
+      `<a href="#" class="sidebar-link" data-action="set-tab" data-tab="${id}" ${state.tab === id ? "aria-current='page'" : ''}>${ICONS[icon]}<span>${esc(label)}</span></a>`
     ).join('\n');
     return `
-      <div class="nav" style="background:var(--color-surface);padding:16px 24px;flex-wrap:wrap;row-gap:10px">
-        <div class="nav-brand" style="display:flex;align-items:center;gap:10px;font-size:24px">
-          <img src="assets/logo-logistica-flash.png" alt="Logística Flash" style="height:36px;width:36px;object-fit:contain">
-          Logística Flash
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <img src="assets/logo-logistica-flash.png" alt="Logística Flash" style="height:34px;width:34px;object-fit:contain;border-radius:6px">
+          <span>Logística Flash</span>
         </div>
         ${links}
-        <a href="#" class="navlink" data-action="logout">Salir</a>
-      </div>`;
+        <div class="sidebar-spacer"></div>
+        <hr class="hr" style="margin:8px 0">
+        <div class="sidebar-user">
+          <div class="sidebar-avatar">${ICONS.person}</div>
+          <div class="sidebar-user-info">
+            <div class="sidebar-user-name">Administrador</div>
+            <a href="#" class="sidebar-logout" data-action="logout">Cerrar sesión</a>
+          </div>
+        </div>
+      </aside>`;
   }
 
   function renderMain() {
@@ -428,7 +441,6 @@
     return `
       <div>
         <div style="position:relative;overflow:hidden;border-radius:var(--radius-lg);background:linear-gradient(135deg, var(--color-accent-800) 0%, var(--color-accent-600) 45%, var(--color-accent-500) 100%);padding:var(--space-6) var(--space-6);margin-bottom:var(--space-6);isolation:isolate">
-          <img src="assets/logo-logistica-flash-transparent.png" alt="" aria-hidden="true" style="position:absolute;right:-10px;top:50%;transform:translateY(-50%);height:230%;max-height:320px;width:auto;opacity:0.22;filter:brightness(0) invert(1);pointer-events:none;z-index:0">
           <div style="position:relative;z-index:1">
             <h6 style="margin-bottom:2px;color:var(--color-accent-100);font-weight:700;letter-spacing:0.02em;text-transform:uppercase;font-size:12px">${esc(todayLabel())}</h6>
             <h1 style="margin-bottom:0;color:#ffffff">Buenos días</h1>
@@ -463,13 +475,13 @@
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Accesos rápidos</h4>
         <div class="quick-actions">
           <button class="btn btn-secondary btn-block" data-action="set-tab" data-tab="clientes" type="button" style="gap:10px">
-            ${ICONS.person}<span>Agregar cliente</span><span style="margin-left:auto">→</span>
+            <span style="color:var(--color-accent-600);display:flex">${ICONS.person}</span><span>Agregar cliente</span><span style="margin-left:auto">→</span>
           </button>
           <button class="btn btn-secondary btn-block" data-action="set-tab" data-tab="paquete" type="button" style="gap:10px">
-            ${ICONS.box}<span>Registrar paquete</span><span style="margin-left:auto">→</span>
+            <span style="color:var(--color-accent-600);display:flex">${ICONS.box}</span><span>Registrar paquete</span><span style="margin-left:auto">→</span>
           </button>
           <button class="btn btn-secondary btn-block" data-action="set-tab" data-tab="lista" type="button" style="gap:10px">
-            ${ICONS.checklist}<span>Lista del día por mensajero</span><span style="margin-left:auto">→</span>
+            <span style="color:var(--color-accent-600);display:flex">${ICONS.checklist}</span><span>Lista del día por mensajero</span><span style="margin-left:auto">→</span>
           </button>
         </div>
 
