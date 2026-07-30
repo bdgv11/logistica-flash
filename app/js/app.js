@@ -113,7 +113,14 @@
     return String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(DIACRITICS_RE, '');
   }
 
-  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  // toISOString() converts to UTC first — for anyone west of UTC (like
+  // Costa Rica, UTC-6) that silently rolls "today" over to tomorrow for
+  // several hours every evening. Build the date from local getters instead
+  // so it always matches the calendar day showing on the user's own clock.
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
 
   function todayLabel() {
     const raw = new Date().toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
