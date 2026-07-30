@@ -427,8 +427,13 @@
 
     return `
       <div>
-        <h6 class="text-muted" style="margin-bottom:2px">${esc(todayLabel())}</h6>
-        <h1 style="margin-bottom:var(--space-6)">Buenos días</h1>
+        <div style="position:relative;overflow:hidden;border-radius:var(--radius-lg);background:linear-gradient(135deg, var(--color-accent-800) 0%, var(--color-accent-600) 45%, var(--color-accent-500) 100%);padding:var(--space-6) var(--space-6);margin-bottom:var(--space-6);isolation:isolate">
+          <img src="assets/logo-logistica-flash-transparent.png" alt="" aria-hidden="true" style="position:absolute;right:-10px;top:50%;transform:translateY(-50%);height:230%;max-height:320px;width:auto;opacity:0.22;filter:brightness(0) invert(1);pointer-events:none;z-index:0">
+          <div style="position:relative;z-index:1">
+            <h6 style="margin-bottom:2px;color:var(--color-accent-100);font-weight:700;letter-spacing:0.02em;text-transform:uppercase;font-size:12px">${esc(todayLabel())}</h6>
+            <h1 style="margin-bottom:0;color:#ffffff">Buenos días</h1>
+          </div>
+        </div>
 
         <div class="stat-grid">
           <div class="card elev-sm">
