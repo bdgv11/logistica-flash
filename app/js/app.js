@@ -99,6 +99,9 @@
     invoiceQueue: null,
     historyFilters: { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
+    fatalError: null,
+    loggingIn: false,
+    messengerError: '',
   };
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -213,6 +216,25 @@
 
   function fmtCRC(n) { return Math.round(Number(n) || 0).toLocaleString('es-CR'); }
 
+  // Turns whatever a failed request threw into something an administrator can
+  // act on. Network failures are by far the most common and used to surface as
+  // raw English browser text (or, worse, as "contraseña incorrecta").
+  function describeError(err) {
+    const msg = (err && err.message) || '';
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(msg)) {
+      return 'No hay conexión con el servidor. Revisa tu internet y vuelve a intentar.';
+    }
+    return msg || 'Ocurrió un error inesperado.';
+  }
+
+  function describeAuthError(err) {
+    const msg = (err && err.message) || '';
+    if (/invalid login credentials/i.test(msg)) return 'Correo o contraseña incorrectos.';
+    if (/email not confirmed/i.test(msg)) return 'Esa cuenta todavía no está confirmada. Confírmala en Supabase (Authentication → Users) y vuelve a entrar.';
+    if (/too many requests|rate limit/i.test(msg)) return 'Demasiados intentos seguidos. Espera un minuto y vuelve a probar.';
+    return describeError(err);
+  }
+
   async function withBusy(fn) {
     if (state.busy) return;
     state.busy = true;
@@ -263,6 +285,12 @@
   const confirmRoot = document.getElementById('confirm-root');
 
   function render() {
+    if (state.fatalError) {
+      loginRoot.innerHTML = renderFatal();
+      loginRoot.style.display = '';
+      shellRoot.style.display = 'none';
+      return;
+    }
     if (state.loading) {
       loginRoot.innerHTML = '<div class="app-shell" style="display:flex;align-items:center;justify-content:center"><p class="text-muted">Cargando…</p></div>';
       loginRoot.style.display = '';
@@ -325,6 +353,25 @@
     const action = state.confirmAction;
     closeConfirm();
     if (action) await action();
+  }
+
+  // ── fatal / setup error ──────────────────────────────────────────────────
+  // Anything that stops the app from starting lands here. Before this screen
+  // existed the same failures just left "Cargando…" on screen forever, with
+  // the real reason only visible in the browser console.
+  function renderFatal() {
+    return `
+      <div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);display:flex;align-items:center;justify-content:center;padding:16px">
+        <div class="card elev-md" style="max-width:420px;width:100%">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:var(--space-2)">
+            <img src="assets/logo-logistica-flash.png" alt="Logística Flash" style="height:32px;width:32px;object-fit:contain">
+            <div class="card-title">Logística Flash</div>
+          </div>
+          <p style="margin:0 0 var(--space-2);font-size:15px;font-family:var(--font-heading);font-weight:800">No se pudo iniciar la app</p>
+          <p class="text-muted" style="margin-bottom:var(--space-3);font-size:14px">${esc(state.fatalError)}</p>
+          <button class="btn btn-primary btn-block" type="button" data-action="retry-boot" style="justify-content:center">Reintentar</button>
+        </div>
+      </div>`;
   }
 
   // ── login ────────────────────────────────────────────────────────────────
@@ -755,12 +802,50 @@
   }
 
   // ── LISTA DEL DIA ────────────────────────────────────────────────────────
+  // A package only shows up on this screen if its client has a province that
+  // some messenger actually covers. Splitting the two sets explicitly matters
+  // because "Marcar como enviada" must close out exactly what's on screen —
+  // marking the invisible ones too would file them in the Historial as
+  // delivered and collected without anyone ever seeing them.
+  function isRoutable(p) {
+    if (!p.arrived || p.sent) return false;
+    const c = clientById(p.clientId);
+    if (!c || !c.province) return false;
+    return state.messengers.some((m) => m.zones.includes(c.province));
+  }
+
+  function routeVisiblePackages() {
+    return state.packages.filter(isRoutable);
+  }
+
+  function routeOrphanPackages() {
+    return state.packages.filter((p) => p.arrived && !p.sent && !isRoutable(p));
+  }
+
+  // saveMessenger() now blocks new overlaps, but data saved before that check
+  // existed can still have one province on two messengers — which duplicates
+  // the package across both cards and both route totals. Detect it so it's
+  // visible instead of quietly inflating the numbers.
+  function duplicatedZones() {
+    const byZone = new Map();
+    state.messengers.forEach((m) => {
+      (Array.isArray(m.zones) ? m.zones : []).forEach((z) => {
+        if (!byZone.has(z)) byZone.set(z, []);
+        byZone.get(z).push(m.name);
+      });
+    });
+    return [...byZone.entries()].filter(([, names]) => names.length > 1);
+  }
+
   function renderLista() {
     // Not tied to the calendar day — rutas here don't necessarily go out
     // every day (some weeks it's twice), so what decides whether a package
     // still belongs in this list is whether it's been marked "enviada" yet,
     // not what date it happened to arrive on.
-    const anyPending = state.packages.some((p) => p.arrived && !p.sent);
+    const visiblePkgs = routeVisiblePackages();
+    const orphans = routeOrphanPackages();
+    const dupZones = duplicatedZones();
+    const anyPending = visiblePkgs.length > 0;
     const cards = state.messengers.map((m) => {
       const entries = state.packages
         .filter((p) => p.arrived && !p.sent)
@@ -891,6 +976,23 @@
           </div>
           <button type="button" class="btn btn-secondary" data-action="mark-route-sent" ${anyPending ? '' : 'disabled'}>Marcar como enviada — vaciar lista</button>
         </div>
+        ${dupZones.length > 0 ? `
+          <div class="card elev-sm" style="border:1px solid #e0a800;background:#fdecc8;margin-bottom:var(--space-4)">
+            <p style="margin:0;font-size:15px;color:#8a5a00">
+              <strong>Hay provincias con más de un mensajero.</strong>
+              Los paquetes de esas zonas salen duplicados: se cuentan dos veces en el total a cobrar y el cliente recibiría dos facturas.
+            </p>
+            <p style="margin:6px 0 0;font-size:13px;color:#8a5a00">${esc(dupZones.map(([z, names]) => `${z}: ${names.join(' y ')}`).join(' · '))}. Corrígelo en "Mensajeros" dejando la provincia en uno solo.</p>
+          </div>` : ''}
+        ${orphans.length > 0 ? `
+          <div class="card elev-sm" style="border:1px solid var(--color-accent-300);background:var(--color-accent-100);margin-bottom:var(--space-4)">
+            <p style="margin:0;font-size:15px">
+              <strong>${orphans.length} ${orphans.length === 1 ? 'paquete llegó' : 'paquetes llegaron'} pero no ${orphans.length === 1 ? 'aparece' : 'aparecen'} en ninguna ruta</strong>
+              — el cliente no tiene provincia, o ningún mensajero cubre esa provincia.
+              ${esc(orphans.slice(0, 5).map((p) => p.tracking).join(', '))}${orphans.length > 5 ? '…' : ''}
+            </p>
+            <p class="text-muted" style="margin:6px 0 0;font-size:13px">Asígnale provincia al cliente en "Clientes", o la provincia a un mensajero. No se van a marcar como enviados hasta que aparezcan en una ruta.</p>
+          </div>` : ''}
         <div style="display:flex;flex-direction:column;gap:var(--space-4)">${cards}</div>
       </div>`;
   }
@@ -945,6 +1047,7 @@
             <label>Provincias que cubre</label>
             <div style="display:flex;flex-wrap:wrap;gap:10px">${chips}</div>
           </div>
+          ${state.messengerError ? `<p style="color:#b3261e;font-size:13px;margin:0 0 var(--space-2)">${esc(state.messengerError)}</p>` : ''}
           <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
             <button class="btn btn-primary" type="button" data-action="save-messenger">${editing ? 'Guardar cambios' : 'Guardar mensajero'}</button>
             ${editing ? `<button class="btn btn-secondary" type="button" data-action="cancel-edit-messenger">Cancelar</button>` : ''}
@@ -1096,7 +1199,7 @@
     state.tab = tab;
     if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' }; }
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '' }; }
-    if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; }
+    if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; state.messengerError = ''; }
     render();
   }
 
@@ -1178,12 +1281,14 @@
   }
 
   function markRouteSent() {
-    askConfirm('Marcar como enviada', '¿Ya se envió y asignó todo lo de esta lista? Se vaciará para el siguiente día que armes rutas — esto no se puede deshacer desde aquí.', () => doMarkRouteSent(), 'Marcar como enviada');
+    const ids = routeVisiblePackages().map((p) => p.id);
+    if (ids.length === 0) return;
+    askConfirm('Marcar como enviada', `¿Ya se envió y asignó todo lo de esta lista? Se cerrarán ${ids.length} ${ids.length === 1 ? 'paquete' : 'paquetes'} y la lista quedará vacía para la siguiente ruta — esto no se puede deshacer desde aquí.`, () => doMarkRouteSent(ids), 'Marcar como enviada');
   }
 
-  async function doMarkRouteSent() {
+  async function doMarkRouteSent(ids) {
     await withBusy(async () => {
-      await LF.db.markRouteSent(todayISO());
+      await LF.db.markRouteSent(ids, todayISO());
       await reloadPackages();
       state.invoiceQueue = null;
       render();
@@ -1213,7 +1318,32 @@
     const phone = document.getElementById('messenger-phone').value;
     const origin = document.getElementById('messenger-origin').value;
     const zones = state.messengerZonesDraft;
-    if (!name.trim() || !phone.trim() || !origin.trim()) return;
+
+    // These used to fail silently — the button just did nothing with no clue
+    // why, since (unlike the package form) it is never disabled.
+    if (!name.trim() || !phone.trim() || !origin.trim()) {
+      state.messengerError = 'Nombre, teléfono y punto de salida son obligatorios.';
+      render(); return;
+    }
+
+    // One province, one messenger. Nothing enforced this before, and an
+    // overlap made the same package show up in both messengers' cards: counted
+    // twice in the route total, listed in both WhatsApp routes, and invoiced
+    // to the client twice. Meanwhile messengerForZone() only ever picks the
+    // first match, so Registrar paquete and Historial disagreed with Lista
+    // del día about who was carrying it.
+    const conflicts = zones
+      .map((z) => {
+        const other = state.messengers.find((m) => m.id !== state.messengerEditingId && Array.isArray(m.zones) && m.zones.includes(z));
+        return other ? `${z} (ya la cubre ${other.name})` : null;
+      })
+      .filter(Boolean);
+    if (conflicts.length) {
+      state.messengerError = `Cada provincia solo puede tener un mensajero. Quita ${conflicts.length === 1 ? 'esta provincia' : 'estas provincias'} o edita al otro mensajero primero: ${conflicts.join(', ')}.`;
+      render(); return;
+    }
+    state.messengerError = '';
+
     await withBusy(async () => {
       if (state.messengerEditingId) {
         await LF.db.updateMessenger(state.messengerEditingId, { name: name.trim(), phone: phone.trim(), origin: origin.trim(), zones });
@@ -1249,6 +1379,14 @@
 
     switch (action) {
       case 'login': return void doLogin();
+      case 'retry-boot': {
+        state.fatalError = null;
+        // A CDN/config failure is detected at page-load time, so retrying
+        // in-place can't fix it — only a real reload can re-fetch the script.
+        if (LF.setupError) { window.location.reload(); return; }
+        void boot();
+        return;
+      }
       case 'logout': return void doLogout();
       case 'set-tab': return setTab(el.dataset.tab);
 
@@ -1352,6 +1490,7 @@
       case 'edit-messenger': {
         const m = state.messengers.find((x) => x.id === el.dataset.id);
         if (!m) return;
+        state.messengerError = '';
         state.messengerEditingId = m.id; state.messengerZonesDraft = [...m.zones];
         state.messengerDraft = { name: m.name, phone: m.phone, origin: m.origin || '' };
         render();
@@ -1361,10 +1500,12 @@
       case 'cancel-edit-messenger':
         state.messengerEditingId = null; state.messengerZonesDraft = [];
         state.messengerDraft = { name: '', phone: '', origin: '' };
+        state.messengerError = '';
         render(); return;
       case 'save-messenger': return void saveMessenger();
       case 'delete-messenger': return void deleteMessenger(el.dataset.id);
       case 'toggle-zone': {
+        state.messengerError = '';
         const zone = el.dataset.zone;
         const i = state.messengerZonesDraft.indexOf(zone);
         if (i === -1) state.messengerZonesDraft.push(zone); else state.messengerZonesDraft.splice(i, 1);
@@ -1464,18 +1605,54 @@
     }
   });
 
+  function setLoginBusy(busy) {
+    const btn = document.querySelector('[data-action="login"]');
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.textContent = busy ? 'Ingresando…' : 'Ingresar';
+  }
+
   async function doLogin() {
+    if (state.loggingIn) return;
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     showLoginError('');
-    const { session, error } = await LF.auth.signIn(email, password);
-    if (error) { showLoginError('Usuario o contraseña incorrectos.'); return; }
+    if (!email || !password) { showLoginError('Escribe tu correo y tu contraseña.'); return; }
+
+    state.loggingIn = true;
+    setLoginBusy(true);
+    let session;
+    try {
+      // signIn() returns {error} for rejected credentials, but still *throws*
+      // on network failures — unhandled, that left the button doing nothing
+      // at all. And every failure used to read "Usuario o contraseña
+      // incorrectos", pointing at the wrong problem when the real one was
+      // no internet or an unconfirmed account.
+      const res = await LF.auth.signIn(email, password);
+      if (res.error) { showLoginError(describeAuthError(res.error)); return; }
+      session = res.session;
+    } catch (err) {
+      console.error(err);
+      showLoginError(describeError(err));
+      return;
+    } finally {
+      state.loggingIn = false;
+      setLoginBusy(false);
+    }
+
     state.session = session;
     state.loading = true;
     render();
-    await reloadAll();
-    state.loading = false;
-    render();
+    try {
+      await reloadAll();
+      state.loading = false;
+      render();
+    } catch (err) {
+      console.error(err);
+      state.loading = false;
+      state.fatalError = describeError(err);
+      render();
+    }
   }
 
   async function doLogout() {
@@ -1485,24 +1662,58 @@
   }
 
   // ── boot ─────────────────────────────────────────────────────────────────
-  async function boot() {
-    render();
-    const session = await LF.auth.getSession();
-    state.session = session;
-    if (session) await reloadAll();
-    state.loading = false;
-    render();
+  let authSubscribed = false;
 
+  function subscribeAuth() {
+    // Guarded because boot() can run again via "Reintentar", and a second
+    // subscription would double every auth callback.
+    if (authSubscribed) return;
+    authSubscribed = true;
     LF.auth.onAuthStateChange(async (session) => {
       const hadSession = !!state.session;
       state.session = session;
       if (session && !hadSession) {
         state.loading = true; render();
-        await reloadAll();
+        try {
+          await reloadAll();
+        } catch (err) {
+          console.error(err);
+          state.fatalError = describeError(err);
+        }
         state.loading = false;
       }
       render();
     });
+  }
+
+  async function boot() {
+    // Config/CDN problems are detected before app.js runs; surface them as-is.
+    if (LF.setupError) {
+      state.loading = false;
+      state.fatalError = LF.setupError;
+      render();
+      return;
+    }
+    state.fatalError = null;
+    state.loading = true;
+    render();
+    try {
+      const session = await LF.auth.getSession();
+      state.session = session;
+      if (session) await reloadAll();
+      state.loading = false;
+      render();
+    } catch (err) {
+      // Without this the app used to sit on "Cargando…" forever on any
+      // startup failure — bad credentials in config.js, Supabase down, no
+      // internet — with nothing on screen to explain it or retry.
+      console.error(err);
+      state.loading = false;
+      state.fatalError = describeError(err);
+      render();
+      return;
+    }
+    subscribeAuth();
   }
 
   boot();

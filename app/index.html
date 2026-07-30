@@ -18,6 +18,12 @@
 <div id="confirm-root"></div>
 
 <script src="js/config.js"></script>
+<!-- Recomendado: fijar la versión exacta en vez de "@2" (que es un rango y
+     puede cambiar solo). Abre esta URL en el navegador, mira qué versión
+     sirve, y reemplázala aquí — por ejemplo @2.58.0. Así una publicación
+     nueva de Supabase no puede romper la app sin que ustedes lo decidan.
+     Si el CDN falla, la app ahora muestra un mensaje claro en vez de
+     quedarse en blanco (ver js/supabaseClient.js). -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/supabaseClient.js"></script>
 <script src="js/auth.js"></script>

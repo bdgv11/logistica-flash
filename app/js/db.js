@@ -11,6 +11,29 @@ window.LF = window.LF || {};
     if (error) throw new Error(error.message || 'Error de conexión con la base de datos.');
   }
 
+  // Supabase's REST API caps how many rows one request returns (1000 by
+  // default) and just gives you the first page — no error, no warning. A plain
+  // select('*') therefore starts silently losing data once the table grows
+  // past that, which for `packages` is a matter of months. Read in explicit
+  // chunks until we've seen everything, ordered deterministically so pages
+  // can't overlap or skip rows.
+  const CHUNK = 1000;
+  async function selectAll(table) {
+    const out = [];
+    for (let from = 0; ; from += CHUNK) {
+      const { data, error } = await sb().from(table)
+        .select('*')
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, from + CHUNK - 1);
+      throwIfError(error);
+      if (!data || data.length === 0) break;
+      for (const row of data) out.push(row);
+      if (data.length < CHUNK) break;
+    }
+    return out;
+  }
+
   function mapClient(row) {
     return {
       id: row.id, name: row.name, phone: row.phone,
@@ -44,9 +67,7 @@ window.LF = window.LF || {};
   LF.db = {
     // ── clients ──────────────────────────────────────────────────────────
     async listClients() {
-      const { data, error } = await sb().from('clients').select('*');
-      throwIfError(error);
-      return data.map(mapClient);
+      return (await selectAll('clients')).map(mapClient);
     },
 
     async createClient({ name, phone, address, addressDetails, province, canton }) {
@@ -72,9 +93,7 @@ window.LF = window.LF || {};
 
     // ── messengers ───────────────────────────────────────────────────────
     async listMessengers() {
-      const { data, error } = await sb().from('messengers').select('*');
-      throwIfError(error);
-      return data.map(mapMessenger);
+      return (await selectAll('messengers')).map(mapMessenger);
     },
 
     async createMessenger({ name, phone, origin, zones }) {
@@ -100,9 +119,7 @@ window.LF = window.LF || {};
 
     // ── packages ─────────────────────────────────────────────────────────
     async listPackages() {
-      const { data, error } = await sb().from('packages').select('*');
-      throwIfError(error);
-      return data.map(mapPackage);
+      return (await selectAll('packages')).map(mapPackage);
     },
 
     async createPackage({ tracking, weight, cost, clientId }) {
@@ -137,14 +154,17 @@ window.LF = window.LF || {};
       return mapPackage(data);
     },
 
-    // Closes out everything currently showing in "Lista del día" — flips
-    // `sent` on every arrived-but-unsent package, so the list is empty and
-    // ready for the next batch whenever it's assembled (not tied to the
-    // calendar day, since routes don't necessarily go out daily).
-    async markRouteSent(sentDate) {
+    // Closes out the packages listed in "Lista del día". Takes the explicit
+    // ids the screen is showing rather than "every arrived-and-unsent row":
+    // a package whose client has no province (or a province no messenger
+    // covers) never appears on that screen, and used to get silently marked
+    // as delivered here — landing in the Historial as money collected for a
+    // delivery nobody made.
+    async markRouteSent(ids, sentDate) {
+      if (!Array.isArray(ids) || ids.length === 0) return;
       const { error } = await sb().from('packages')
         .update({ sent: true, sent_date: sentDate })
-        .eq('arrived', true).eq('sent', false);
+        .in('id', ids).eq('sent', false);
       throwIfError(error);
     },
 
@@ -160,9 +180,14 @@ window.LF = window.LF || {};
     },
 
     // ── settings ─────────────────────────────────────────────────────────
+    // maybeSingle(), not single(): if the settings row is ever missing, a
+    // hard error here happens during boot and locks the whole app out. Falling
+    // back to the documented defaults keeps it usable — the rate is editable
+    // from Configuración anyway.
     async getSettings() {
-      const { data, error } = await sb().from('app_settings').select('*').eq('id', 1).single();
+      const { data, error } = await sb().from('app_settings').select('*').eq('id', 1).maybeSingle();
       throwIfError(error);
+      if (!data) return { ratePerLb: 4.25, crcRate: 525 };
       return mapSettings(data);
     },
 
