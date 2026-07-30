@@ -409,9 +409,9 @@
 
   // ── INICIO ───────────────────────────────────────────────────────────────
   function renderInicio() {
-    const today = todayISO();
-    const todaysPackages = state.packages.filter((p) => p.assignedDate === today);
-    const totalToday = todaysPackages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
+    const currentMonth = todayISO().slice(0, 7);
+    const monthDeliveredPackages = state.packages.filter((p) => p.sent && p.sentDate && p.sentDate.slice(0, 7) === currentMonth);
+    const totalMonth = monthDeliveredPackages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
     const incompleteClients = state.clients.filter((c) => !c.address || !c.province).length;
     const pending = state.packages.filter((p) => !p.clientId).length;
     const esperandoLlegada = state.packages.filter((p) => p.clientId && !p.arrived).length;
@@ -432,9 +432,9 @@
 
         <div class="stat-grid">
           <div class="card elev-sm">
-            <div class="card-kicker">Total a cobrar hoy</div>
-            <div class="card-title" style="font-size:34px">$${fmtMoney(totalToday)}</div>
-            <p class="card-body">≈ ₡${fmtCRC(totalToday * state.settings.crcRate)} · todas las rutas</p>
+            <div class="card-kicker">Total entregado este mes</div>
+            <div class="card-title" style="font-size:34px">$${fmtMoney(totalMonth)}</div>
+            <p class="card-body">≈ ₡${fmtCRC(totalMonth * state.settings.crcRate)} · ${monthDeliveredPackages.length} paquetes entregados</p>
           </div>
           <div class="card elev-sm">
             <div class="card-kicker">Falta info</div>
