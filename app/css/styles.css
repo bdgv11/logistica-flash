@@ -276,7 +276,11 @@ textarea.input { min-height: 90px; resize: vertical; }
 .app-main { flex: 1; min-width: 0; max-width: 1040px; margin: 0 auto; padding: var(--space-6) var(--space-4) var(--space-8); }
 .quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-6); }
-.table-scroll { overflow-x: auto; }
+/* min-width: 0 stops a wide table's intrinsic size from bubbling up through
+   the flex ancestors (.app-main, .card) and forcing the whole page wider
+   than the viewport on mobile — without it, overflow-x: auto here never
+   gets the chance to kick in because nothing upstream ever shrinks. */
+.table-scroll { overflow-x: auto; min-width: 0; }
 .province-chip {
   padding: 7px 14px; border-radius: var(--radius-md);
   font-family: var(--font-heading); font-weight: 600; font-size: 13px;
@@ -288,3 +292,14 @@ textarea.input { min-height: 90px; resize: vertical; }
   border-color: var(--color-accent); background: var(--color-accent); color: #ffffff;
 }
 .pagination-row { display: flex; align-items: center; justify-content: space-between; margin-top: var(--space-3); }
+
+/* .app-main's auto left/right margins (used to center the 1040px-capped
+   content area on wide screens) disable flex stretch once .app-shell
+   switches to column direction on mobile — without this override it falls
+   back to shrink-to-fit sizing, so any wide table inside makes the whole
+   page wider than the phone's screen instead of just scrolling internally
+   inside .table-scroll like it should. Placed at the end of the file so it
+   wins the cascade over the earlier same-specificity .app-main rule. */
+@media (max-width: 768px) {
+  .app-main { margin-left: 0; margin-right: 0; }
+}

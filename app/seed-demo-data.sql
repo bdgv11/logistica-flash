@@ -1,101 +1,84 @@
--- Logística Flash — datos de prueba para una prueba con volumen real
+-- Logística Flash — datos de prueba
 -- Corre esto una sola vez en Supabase (Project > SQL Editor > New query).
--- Crea: 4 mensajeros (uno por zona), 20 clientes repartidos en esas 4
--- zonas, y 34 paquetes repartidos en 3 estados para poder probar TODAS
--- las pantallas de una vez:
---   - 20 "ya enviados" (uno por cliente), con fechas de envío variadas
---     en las últimas semanas -> llenan Historial (2 páginas, para
---     probar filtros de fecha/monto/mensajero y el Exportar a Excel).
---   - 10 "activos hoy" (la mitad de los clientes, repartidos entre las
---     4 zonas) -> aparecen en Lista del día, listos para probar el
---     ordenamiento de ruta, las facturas y el botón de marcar enviado.
---   - 4 "esperando llegada" (uno por zona) -> aparecen en
---     "Identificados — en tránsito", listos para el botón de llegada.
+-- Crea: 3 mensajeros (uno por zona), 10 clientes (uno sin cobertura de
+-- mensajero, a propósito, para probar ese caso) y 16 paquetes repartidos
+-- en todos los estados posibles, para poder probar cada pantalla:
+--   - En Tránsito / Pre-alerta (con cliente y sin cliente)
+--   - En Bodega — Falta info (con cliente y sin cliente)
+--   - En Bodega — Por entregar (listos para asignar, incluye uno sin
+--     mensajero para su zona, para ver ese botón deshabilitado)
+--   - En ruta (ya asignados a un mensajero, sin entregar)
+--   - Entregado — Debe (entregado pero sin cobrar, marcado en amarillo)
+--   - Historial (ya pagados, con fechas repartidas en las últimas semanas
+--     para probar los filtros y el total del mes en Inicio)
 --
 -- No borra nada, solo agrega — corre sin problema aunque ya tengas
 -- mensajeros o clientes reales cargados. Pero no lo corras dos veces
 -- seguidas: no valida duplicados, así que la segunda corrida te deja
--- 8 mensajeros y 40 clientes repitiendo estos mismos nombres.
--- Si ya corriste reset-data.sql antes, esto te deja la app lista para
--- probar con una cantidad realista de datos en el momento.
+-- todo el nombre repetido. Si ya corriste reset-data.sql antes, esto te
+-- deja la app lista para probar de una vez.
 
 -- ── Mensajeros ────────────────────────────────────────────────────────────
 insert into public.messengers (name, phone, origin, zones) values
   ('Kevin Mora Salas',        '8811-2233', 'https://maps.google.com/?q=9.9281,-84.0907',  array['San José']),
   ('Diego Vindas Chinchilla', '8822-3344', 'https://maps.google.com/?q=10.0028,-84.1165', array['Heredia']),
-  ('Andrés Solano Rojas',     '8833-4455', 'https://maps.google.com/?q=10.0163,-84.2115', array['Alajuela']),
-  ('Fabián Jiménez Ureña',    '8844-5566', 'https://maps.google.com/?q=9.8644,-83.9194',  array['Cartago']);
+  ('Andrés Solano Rojas',     '8833-4455', 'https://maps.google.com/?q=10.0163,-84.2115', array['Alajuela']);
 
--- ── Clientes + paquetes ───────────────────────────────────────────────────
-with new_clients as (
-  insert into public.clients (name, phone, address, province, canton) values
-    ('María Fernández Jiménez',        '8801-0001', 'https://maps.google.com/?q=9.9281,-84.0907',  'San José', 'San José'),
-    ('Carlos Rodríguez Vargas',        '8801-0002', 'https://maps.google.com/?q=9.9189,-84.1449',  'San José', 'Escazú'),
-    ('Ana Lucía Chacón Solís',         '8801-0003', 'https://maps.google.com/?q=9.9167,-84.0333',  'San José', 'Curridabat'),
-    ('Luis Diego Araya Mora',          '8801-0004', 'https://maps.google.com/?q=9.8975,-84.0669',  'San José', 'Desamparados'),
-    ('Karla Vanessa Bolaños Núñez',    '8801-0005', 'https://maps.google.com/?q=9.9639,-84.0500',  'San José', 'Moravia'),
-    ('Esteban Campos Rojas',           '8801-0006', 'https://maps.google.com/?q=10.0028,-84.1165', 'Heredia',  'Heredia'),
-    ('Gabriela Sánchez Ortiz',         '8801-0007', 'https://maps.google.com/?q=10.0333,-84.1167', 'Heredia',  'Barva'),
-    ('Rodrigo Alvarado Miranda',       '8801-0008', 'https://maps.google.com/?q=9.9833,-84.0917',  'Heredia',  'Santo Domingo'),
-    ('Paola Guzmán Herrera',           '8801-0009', 'https://maps.google.com/?q=10.0333,-84.0833', 'Heredia',  'San Rafael'),
-    ('Josué Ramírez Castro',           '8801-0010', 'https://maps.google.com/?q=9.9833,-84.1667',  'Heredia',  'Belén'),
-    ('Melissa Vargas Cordero',         '8801-0011', 'https://maps.google.com/?q=10.0163,-84.2115', 'Alajuela', 'Alajuela'),
-    ('Randall Quesada Brenes',         '8801-0012', 'https://maps.google.com/?q=10.0930,-84.4761', 'Alajuela', 'San Ramón'),
-    ('Silvia Elena Mata Rojas',        '8801-0013', 'https://maps.google.com/?q=10.0725,-84.3128', 'Alajuela', 'Grecia'),
-    ('Jonathan Pérez Salazar',         '8801-0014', 'https://maps.google.com/?q=9.9781,-84.3800',  'Alajuela', 'Atenas'),
-    ('Natalia Cruz Barquero',          '8801-0015', 'https://maps.google.com/?q=10.0975,-84.3831', 'Alajuela', 'Naranjo'),
-    ('Marco Vinicio Fallas Solano',    '8801-0016', 'https://maps.google.com/?q=9.8644,-83.9194',  'Cartago',  'Cartago'),
-    ('Priscilla Monge Vega',           '8801-0017', 'https://maps.google.com/?q=9.8419,-83.8636',  'Cartago',  'Paraíso'),
-    ('Daniel Esteban Villalobos Rojas','8801-0018', 'https://maps.google.com/?q=9.9167,-83.9833',  'Cartago',  'La Unión'),
-    ('Yendry Chaves Alfaro',           '8801-0019', 'https://maps.google.com/?q=9.8833,-83.8667',  'Cartago',  'Oreamuno'),
-    ('Óscar Andrey Zúñiga Porras',     '8801-0020', 'https://maps.google.com/?q=9.8167,-83.9333',  'Cartago',  'El Guarco')
-  returning id
-),
-numbered as (
-  select id, row_number() over () as rn from new_clients
-),
-rate as (
-  select coalesce((select rate_per_lb from public.app_settings where id = 1), 4.25) as rate_per_lb
-),
--- MATERIALIZED fuerza a que el peso aleatorio se calcule una sola vez por
--- fila (si no, Postgres puede evaluar random() una sola vez para toda la
--- consulta y dejar el mismo peso en todos los paquetes).
-expanded as materialized (
-  -- Bucket 1: ya enviado — todos los clientes, fechas repartidas en las
-  -- últimas semanas (más atrás mientras más alto el número de cliente).
-  select n.id as client_id, n.rn, 1 as pkg_num, 'sent' as status,
-         round((1 + random() * 7)::numeric, 1) as weight
-  from numbered n
+-- ── Clientes ──────────────────────────────────────────────────────────────
+-- El código (JG-01, JG-02, ...) se asigna solo, en el orden en que se
+-- insertan estas filas.
+insert into public.clients (name, phone, address, province, canton) values
+  ('María Fernández Jiménez',  '8801-0001', 'https://maps.google.com/?q=9.9281,-84.0907',  'San José', 'San José'),
+  ('Carlos Rodríguez Vargas',  '8801-0002', 'https://maps.google.com/?q=9.9189,-84.1449',  'San José', 'Escazú'),
+  ('Ana Lucía Chacón Solís',   '8801-0003', 'https://maps.google.com/?q=9.9167,-84.0333',  'San José', 'Curridabat'),
+  ('Esteban Campos Rojas',     '8801-0004', 'https://maps.google.com/?q=10.0028,-84.1165', 'Heredia',  'Heredia'),
+  ('Gabriela Sánchez Ortiz',   '8801-0005', 'https://maps.google.com/?q=10.0333,-84.1167', 'Heredia',  'Barva'),
+  ('Rodrigo Alvarado Miranda', '8801-0006', 'https://maps.google.com/?q=9.9833,-84.0917',  'Heredia',  'Santo Domingo'),
+  ('Melissa Vargas Cordero',   '8801-0007', 'https://maps.google.com/?q=10.0163,-84.2115', 'Alajuela', 'Alajuela'),
+  ('Randall Quesada Brenes',   '8801-0008', 'https://maps.google.com/?q=10.0930,-84.4761', 'Alajuela', 'San Ramón'),
+  ('Silvia Elena Mata Rojas',  '8801-0009', 'https://maps.google.com/?q=10.0725,-84.3128', 'Alajuela', 'Grecia'),
+  -- Puntarenas no tiene mensajero asignado — a propósito, para ver el botón
+  -- "Sin mensajero para su zona" deshabilitado en Registrar paquete.
+  ('Óscar Andrey Zúñiga Porras','8801-0010', 'https://maps.google.com/?q=9.9833,-84.8333', 'Puntarenas', 'Puntarenas');
 
-  union all
+-- ── Paquetes ──────────────────────────────────────────────────────────────
 
-  -- Bucket 2: activo hoy en Lista del día — la mitad de los clientes,
-  -- repartidos entre las 4 zonas (números impares).
-  select n.id, n.rn, 2, 'active',
-         round((1 + random() * 7)::numeric, 1)
-  from numbered n
-  where n.rn % 2 = 1
+-- En Tránsito / Pre-alerta — avisado, sin llegar todavía.
+insert into public.packages (tracking, weight, cost, client_id, arrived) values
+  ('TBA9PRE001', null, null, (select id from public.clients where phone = '8801-0001'), false),
+  ('TBA9PRE002', null, null, (select id from public.clients where phone = '8801-0002'), false);
+-- Sin cliente y sin llegar — nada más se guardó el tracking.
+insert into public.packages (tracking, weight, cost, client_id, arrived) values
+  ('TBA9PRE003', null, null, null, false);
 
-  union all
+-- En Bodega — Falta info (llegó físicamente pero falta peso/costo, o
+-- cliente, antes de poder asignarse a un mensajero).
+insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date) values
+  ('TBA9FALTA001', null, null, (select id from public.clients where phone = '8801-0003'), true, current_date),
+  ('TBA9FALTA002', 2.3, 9.78, null, true, current_date); -- Desconocido, ya en bodega
 
-  -- Bucket 3: esperando llegada — uno por zona (el último cliente de
-  -- cada bloque de 5).
-  select n.id, n.rn, 3, 'waiting',
-         round((1 + random() * 7)::numeric, 1)
-  from numbered n
-  where n.rn % 5 = 0
-)
-insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date, sent, sent_date)
-select
-  'TBA9' || lpad((e.rn * 10 + e.pkg_num)::text, 6, '0'),
-  e.weight,
-  round(e.weight * r.rate_per_lb, 2),
-  e.client_id,
-  e.status <> 'waiting',
-  case when e.status = 'active' then current_date
-       when e.status = 'sent' then current_date - (e.rn * 2)::int
-       else null end,
-  e.status = 'sent',
-  case when e.status = 'sent' then current_date - (e.rn * 2)::int else null end
-from expanded e
-cross join rate r;
+-- En Bodega — Por entregar (info completa, esperando que alguien le dé
+-- "Asignar al mensajero").
+insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date) values
+  ('TBA9LISTO001', 3.5, 14.88, (select id from public.clients where phone = '8801-0004'), true, current_date),
+  ('TBA9LISTO002', 5.1, 21.68, (select id from public.clients where phone = '8801-0005'), true, current_date),
+  ('TBA9SINMSGR01', 1.8, 7.65, (select id from public.clients where phone = '8801-0010'), true, current_date);
+
+-- En ruta — ya asignados a un mensajero, todavía sin entregar.
+insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date, routed, routed_date) values
+  ('TBA9RUTA001', 4.2, 17.85, (select id from public.clients where phone = '8801-0006'), true, current_date - 1, true, current_date),
+  ('TBA9RUTA002', 2.7, 11.48, (select id from public.clients where phone = '8801-0007'), true, current_date - 1, true, current_date),
+  ('TBA9RUTA003', 6.0, 25.50, (select id from public.clients where phone = '8801-0008'), true, current_date - 1, true, current_date);
+
+-- Entregado — Debe: el mensajero ya lo entregó pero el cliente todavía no
+-- paga. Se queda visible en Lista del día, marcado en amarillo.
+insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date, routed, routed_date, delivered, delivered_date) values
+  ('TBA9DEBE001', 3.0, 12.75, (select id from public.clients where phone = '8801-0009'), true, current_date - 2, true, current_date - 1, true, current_date);
+
+-- Historial — ya entregados y pagados, fechas repartidas en las últimas
+-- semanas para poder probar los filtros y el "Total entregado este mes".
+insert into public.packages (tracking, weight, cost, client_id, arrived, assigned_date, routed, routed_date, delivered, delivered_date, sent, sent_date) values
+  ('TBA9HIST001', 3.5, 14.88, (select id from public.clients where phone = '8801-0001'), true, current_date - 4, true, current_date - 4, true, current_date - 3, true, current_date - 3),
+  ('TBA9HIST002', 1.9, 8.08,  (select id from public.clients where phone = '8801-0002'), true, current_date - 11, true, current_date - 11, true, current_date - 10, true, current_date - 10),
+  ('TBA9HIST003', 4.4, 18.70, (select id from public.clients where phone = '8801-0004'), true, current_date - 21, true, current_date - 21, true, current_date - 20, true, current_date - 20),
+  ('TBA9HIST004', 2.2, 9.35,  (select id from public.clients where phone = '8801-0005'), true, current_date - 36, true, current_date - 36, true, current_date - 35, true, current_date - 35);

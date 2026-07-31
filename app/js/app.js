@@ -802,35 +802,41 @@
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez — o déjalo sin identificar si todavía no sabés de quién es. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
 
-        <div class="card elev-sm" id="pkg-form-card" style="max-width:520px;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="pkg-form-card" style="max-width:900px;margin-bottom:var(--space-8)">
           <div class="card-kicker">${editing ? 'Editar paquete' : 'Nuevo paquete'}</div>
           <div class="card-title" style="margin-bottom:var(--space-2)">Datos del paquete y cliente</div>
-          <div class="field">
-            <label>ID de tracking</label>
-            <input class="input" id="pkg-tracking" type="text" value="${esc(draft.tracking)}" placeholder="Ej: TBA912345678">
-          </div>
-          <div class="field">
-            <label>Estado</label>
-            <div style="display:flex;gap:var(--space-4)">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
-                <input type="radio" name="pkg-estado" id="pkg-estado-transito" value="transito" ${!draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
-                <span>En Tránsito / Pre-alerta</span>
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
-                <input type="radio" name="pkg-estado" id="pkg-estado-bodega" value="bodega" ${draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
-                <span>En Bodega</span>
-              </label>
+
+          <div style="display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-3)">
+            <div class="field">
+              <label>ID de tracking</label>
+              <input class="input" id="pkg-tracking" type="text" value="${esc(draft.tracking)}" placeholder="Ej: TBA912345678">
             </div>
-            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Marca "En Bodega" solo cuando ya llegó físicamente. Para salir con un mensajero necesita además cliente, peso y costo.</p>
+            <div class="field">
+              <label>Estado</label>
+              <div style="display:flex;gap:var(--space-4);min-height:36px;align-items:center">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+                  <input type="radio" name="pkg-estado" id="pkg-estado-transito" value="transito" ${!draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
+                  <span>En Tránsito / Pre-alerta</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+                  <input type="radio" name="pkg-estado" id="pkg-estado-bodega" value="bodega" ${draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
+                  <span>En Bodega</span>
+                </label>
+              </div>
+              <p class="text-muted" style="margin:4px 0 0;font-size:13px">Solo cuando ya llegó físicamente.</p>
+            </div>
           </div>
-          <div class="field">
-            <label>Peso (libras) — opcional</label>
-            <input class="input" id="pkg-weight" type="number" step="0.1" min="0" value="${esc(draft.weight)}" placeholder="Ej: 3.5">
-          </div>
-          <div class="field">
-            <label>Costo estimado ($${state.settings.ratePerLb}/lb) — editable</label>
-            <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
-            <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
+
+          <div style="display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-3)">
+            <div class="field">
+              <label>Peso (libras) — opcional</label>
+              <input class="input" id="pkg-weight" type="number" step="0.1" min="0" value="${esc(draft.weight)}" placeholder="Ej: 3.5">
+            </div>
+            <div class="field">
+              <label>Costo estimado ($${state.settings.ratePerLb}/lb) — editable</label>
+              <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+              <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
+            </div>
           </div>
 
           ${!selectedClient ? `
@@ -863,7 +869,7 @@
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Paquetes pendientes</h4>
         <p class="text-muted" style="margin-bottom:var(--space-3)">Esperando llegar, o esperando identificar el cliente (Desconocidos).</p>
         <div class="card elev-sm" style="margin-bottom:var(--space-4)">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-3)">
+          <div style="display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-3)">
             <div class="field">
               <label>Buscar por código, nombre o tracking</label>
               <input class="input" id="pkg-list-search" type="text" value="${esc(f.query)}" placeholder="Ej: JG-238, María, TBA912...">
@@ -1242,7 +1248,7 @@
         <p class="text-muted" style="margin-bottom:var(--space-6)">Paquetes ya entregados y pagados. Filtra y descarga el detalle en Excel.</p>
 
         <div class="card elev-sm" style="margin-bottom:var(--space-4)">
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--space-3)">
+          <div style="display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--space-3)">
             <div class="field">
               <label>Cliente</label>
               <input class="input" id="history-client" type="text" value="${esc(f.client)}" placeholder="Buscar por nombre">
