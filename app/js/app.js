@@ -499,12 +499,14 @@
     const incompleteClients = state.clients.filter((c) => !c.address || !c.province).length;
     const pending = state.packages.filter((p) => !p.clientId).length;
     const esperandoLlegada = state.packages.filter((p) => p.clientId && !p.arrived).length;
-    const bodegaIncompleto = state.packages.filter((p) => p.clientId && p.arrived && !p.sent && !pkgInfoComplete(p)).length;
+    const bodegaIncompleto = state.packages.filter((p) => p.clientId && p.arrived && !p.sent && !p.routed && !pkgInfoComplete(p)).length;
+    const porAsignar = readyToRoutePackages().length;
 
     const parts = [];
     if (pending > 0) parts.push(`${pending} sin identificar`);
     if (esperandoLlegada > 0) parts.push(`${esperandoLlegada} esperando llegada`);
     if (bodegaIncompleto > 0) parts.push(`${bodegaIncompleto} en bodega sin completar`);
+    if (porAsignar > 0) parts.push(`${porAsignar} listos para asignar`);
     const hasPending = parts.length > 0;
     const cardStyle = hasPending ? 'border:1px solid var(--color-accent-300);background:var(--color-accent-100);gap:var(--space-3)' : '';
     const message = hasPending
@@ -727,18 +729,33 @@
 
   // A package can be marked "En Bodega" the moment it physically shows up,
   // even before anyone's filled in who it belongs to or what it weighs —
-  // but it can't go out with a mensajero missing that. This is the one
-  // gate that decides whether it's actually ready to route.
+  // but it can't be assigned to a mensajero missing that.
   function pkgInfoComplete(p) {
     return !!p.clientId && p.weight != null && p.cost != null;
   }
 
-  // Everything still in play before it becomes a routable, sent delivery:
-  // waiting to physically arrive, or arrived but still missing the client
-  // and/or peso/costo it needs before it can go to a mensajero. Once sent,
-  // it belongs in Historial instead.
+  function pkgHasMessenger(p) {
+    const c = clientById(p.clientId);
+    return !!(c && c.province && state.messengers.some((m) => m.zones.includes(c.province)));
+  }
+
+  // Ready doesn't mean gone: even a complete, arrived package waits here
+  // until an admin explicitly assigns it (routed) — it might be physically
+  // ready but the client can't receive it that day, etc.
+  function isReadyToRoute(p) {
+    return p.arrived && !p.sent && !p.routed && pkgInfoComplete(p) && pkgHasMessenger(p);
+  }
+
+  function readyToRoutePackages() {
+    return state.packages.filter(isReadyToRoute);
+  }
+
+  // Everything still in Registrar paquete's queue: waiting to physically
+  // arrive, arrived but missing info, or arrived and complete but not yet
+  // assigned to a mensajero. Once routed, it moves into Lista del día;
+  // once sent (paid), it belongs in Historial instead.
   function pendingPackages() {
-    return state.packages.filter((p) => !p.sent && (!p.arrived || !pkgInfoComplete(p)));
+    return state.packages.filter((p) => !p.sent && !p.routed);
   }
 
   function getPkgListRows() {
@@ -747,7 +764,9 @@
     return pendingPackages()
       .map((p) => {
         const c = p.clientId ? clientById(p.clientId) : null;
-        const estado = !c ? 'sin-cliente' : p.arrived ? 'bodega-incompleto' : 'esperando-llegada';
+        const estado = !p.arrived
+          ? (c ? 'esperando-llegada' : 'sin-cliente')
+          : (pkgInfoComplete(p) ? 'bodega-por-entregar' : 'bodega-falta-info');
         return { p, c, estado };
       })
       .filter(({ p, c }) => !q || normalize(p.tracking).includes(q) || (c && (normalize(c.name).includes(q) || normalize(formatClientCode(c.codeSeq)).includes(q))))
@@ -920,7 +939,8 @@
               <select class="input" id="pkg-list-estado">
                 <option value="">Todos</option>
                 <option value="esperando-llegada" ${f.estado === 'esperando-llegada' ? 'selected' : ''}>Esperando llegada</option>
-                <option value="bodega-incompleto" ${f.estado === 'bodega-incompleto' ? 'selected' : ''}>En bodega — falta completar</option>
+                <option value="bodega-falta-info" ${f.estado === 'bodega-falta-info' ? 'selected' : ''}>En Bodega — falta info</option>
+                <option value="bodega-por-entregar" ${f.estado === 'bodega-por-entregar' ? 'selected' : ''}>En Bodega — por entregar</option>
                 <option value="sin-cliente" ${f.estado === 'sin-cliente' ? 'selected' : ''}>Desconocidos — sin identificar</option>
               </select>
             </div>
@@ -941,14 +961,22 @@
 
     const tableRows = pageRows.map(({ p, c }) => {
       const clienteCell = c ? esc(clientLabel(c)) : `<span class="tag tag-warn">Desconocido</span>`;
-      const estadoLabel = !c
-        ? (p.arrived ? 'Desconocido — en bodega' : 'Desconocido — en tránsito')
-        : (p.arrived ? 'En bodega — falta peso/costo' : 'Esperando llegada');
-      const accion = !c
-        ? `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Identificar cliente →</button>`
-        : !p.arrived
+      let estadoLabel, accion;
+      if (!p.arrived) {
+        estadoLabel = c ? 'Esperando llegada' : 'Desconocido — en tránsito';
+        accion = c
           ? `<button class="btn btn-primary" type="button" data-action="arrive-pkg" data-id="${p.id}">Marcar como llegado →</button>`
-          : `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Completar información →</button>`;
+          : `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Identificar cliente →</button>`;
+      } else if (!pkgInfoComplete(p)) {
+        estadoLabel = 'En Bodega — Falta info';
+        accion = `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Completar información →</button>`;
+      } else if (!pkgHasMessenger(p)) {
+        estadoLabel = 'En Bodega — Por entregar';
+        accion = `<button class="btn btn-secondary" type="button" disabled title="Ningún mensajero cubre la provincia de este cliente">Sin mensajero para su zona</button>`;
+      } else {
+        estadoLabel = 'En Bodega — Por entregar';
+        accion = `<button class="btn btn-primary" type="button" data-action="assign-route" data-id="${p.id}">Asignar al mensajero →</button>`;
+      }
       return `
         <tr>
           <td>${esc((p.createdAt || '').slice(0, 10) || '—')}</td>
@@ -987,28 +1015,12 @@
   }
 
   // ── LISTA DEL DIA ────────────────────────────────────────────────────────
-  // A package only shows up on this screen if its client has a province that
-  // some messenger actually covers. Splitting the two sets explicitly matters
-  // because "Marcar como enviada" must close out exactly what's on screen —
-  // marking the invisible ones too would file them in the Historial as
-  // delivered and collected without anyone ever seeing them.
-  function isRoutable(p) {
-    if (!p.arrived || p.sent) return false;
-    if (!pkgInfoComplete(p)) return false;
-    const c = clientById(p.clientId);
-    if (!c || !c.province) return false;
-    return state.messengers.some((m) => m.zones.includes(c.province));
-  }
-
-  function routeVisiblePackages() {
-    return state.packages.filter(isRoutable);
-  }
-
-  // Only the zone-gap case belongs here — a package still missing client or
-  // peso/costo isn't an "orphan", it's just not ready yet, and already shows
-  // up in Registrar paquete's pending list with what's left to fill in.
-  function routeOrphanPackages() {
-    return state.packages.filter((p) => p.arrived && !p.sent && pkgInfoComplete(p) && !isRoutable(p));
+  // Only what's been explicitly assigned (routed) shows up here — a package
+  // can be complete and ready and still not belong on today's route (the
+  // client might not be able to receive it yet). That queue lives in
+  // Registrar paquete instead; this screen is exclusively the active route.
+  function activeRoutePackages() {
+    return state.packages.filter((p) => p.routed && !p.sent);
   }
 
   // saveMessenger() now blocks new overlaps, but data saved before that check
@@ -1027,17 +1039,9 @@
   }
 
   function renderLista() {
-    // Not tied to the calendar day — rutas here don't necessarily go out
-    // every day (some weeks it's twice), so what decides whether a package
-    // still belongs in this list is whether it's been marked "enviada" yet,
-    // not what date it happened to arrive on.
-    const visiblePkgs = routeVisiblePackages();
-    const orphans = routeOrphanPackages();
     const dupZones = duplicatedZones();
-    const anyPending = visiblePkgs.length > 0;
     const cards = state.messengers.map((m) => {
-      const entries = state.packages
-        .filter((p) => p.arrived && !p.sent && pkgInfoComplete(p))
+      const entries = activeRoutePackages()
         .map((p) => ({ p, c: clientById(p.clientId) }))
         .filter(({ c }) => c && c.province && m.zones.includes(c.province));
 
@@ -1063,19 +1067,26 @@
       const originCoord = extractLatLng(m.origin);
       const orderedStops = orderStopsByRoute(stops, originCoord);
 
-      const lines = orderedStops.map((stop, i) => {
+      // The "ruta de hoy" message is only about what's still coming — once
+      // something's delivered, resending it in that list makes no sense.
+      const pendingStops = orderedStops
+        .map((stop) => ({ ...stop, packages: stop.packages.filter((p) => !p.delivered) }))
+        .filter((stop) => stop.packages.length > 0);
+      const pendingCount = pendingStops.reduce((n, s) => n + s.packages.length, 0);
+
+      const lines = pendingStops.map((stop, i) => {
         const trackings = stop.packages.map((p) => p.tracking);
         const detailLine = stop.c.addressDetails ? `\nDetalle: ${stop.c.addressDetails}` : '';
         const stopCost = stop.packages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
         const stopCostCRC = fmtCRC(stopCost * state.settings.crcRate);
         return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${trackings.length}\nTracking: ${trackings.join(', ')}\nMonto a cobrar: ₡${stopCostCRC} ($${fmtMoney(stopCost)} USD)`;
       });
-      const message = `Ruta de hoy - ${zoneLabel} (${entries.length} paquetes)\n\n` + lines.join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n');
+      const message = `Ruta de hoy - ${zoneLabel} (${pendingCount} paquetes)\n\n` + lines.join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
 
-      // One invoice per client (stop), covering every package they have
-      // today — not one message per package, so a 3-package client gets a
-      // single combined factura instead of 3 separate WhatsApp messages.
+      // One invoice per client (stop), covering every package they have en
+      // esta ruta — no una por paquete, así un cliente con 3 paquetes recibe
+      // una sola factura combinada en vez de 3 mensajes separados.
       const invoiceMessageForStop = (stop) => {
         const totalWeight = stop.packages.reduce((sum, p) => sum + (Number(p.weight) || 0), 0);
         const totalCost = stop.packages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
@@ -1090,22 +1101,33 @@
       const rows = orderedStops.flatMap((stop) => {
         const hasPhone = !!(stop.c.phone && stop.c.phone.trim());
         const stopInvoiceHref = hasPhone ? invoiceHrefForStop(stop) : '';
-        return stop.packages.map((p) => `
-        <tr>
-          <td>${esc(stop.c.name)}</td>
-          <td><a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a></td>
-          <td>${esc(stop.c.phone)}</td>
-          <td>${esc(p.tracking)}</td>
-          <td>$${fmtMoney(p.cost)}</td>
-          <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
-          <td style="text-align:right">
-            <div style="display:inline-flex;gap:6px">
-              <button class="btn btn-icon btn-ghost" type="button" data-action="mark-sent-one" data-id="${p.id}" aria-label="Marcar como enviado" title="Marcar como enviado">${ICONS.check}</button>
-              <button class="btn btn-icon btn-ghost" type="button" data-action="send-invoice" data-href="${esc(stopInvoiceHref)}" aria-label="Enviar factura por WhatsApp" title="Enviar factura por WhatsApp" ${hasPhone ? '' : 'disabled'} style="color:#25D366">${ICONS.whatsappMono}</button>
-              <button class="btn btn-icon btn-ghost" type="button" data-action="unassign-pkg" data-id="${p.id}" aria-label="Quitar de la ruta de hoy" title="Quitar de la ruta de hoy">${ICONS.trash}</button>
-            </div>
-          </td>
-        </tr>`);
+        return stop.packages.map((p) => {
+          const isDebe = p.delivered && !p.sent;
+          const estadoTag = isDebe
+            ? `<span class="tag" style="background:#fdecc8;color:#8a5a00;border:1px solid #e0a800">Entregado — Debe</span>`
+            : `<span class="tag tag-accent">En ruta</span>`;
+          const actions = isDebe
+            ? `<button class="btn btn-secondary" type="button" data-action="mark-paid" data-id="${p.id}" style="white-space:nowrap">Marcar pagado</button>`
+            : `<button class="btn btn-secondary" type="button" data-action="deliver-pkg" data-id="${p.id}" data-paid="1" style="white-space:nowrap">Entregado — Pagado</button>
+               <button class="btn btn-secondary" type="button" data-action="deliver-pkg" data-id="${p.id}" data-paid="0" style="white-space:nowrap">Entregado — Debe</button>`;
+          return `
+          <tr${isDebe ? ' style="background:#fdecc8"' : ''}>
+            <td>${esc(stop.c.name)}</td>
+            <td><a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a></td>
+            <td>${esc(stop.c.phone)}</td>
+            <td>${esc(p.tracking)}</td>
+            <td>$${fmtMoney(p.cost)}</td>
+            <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
+            <td>${estadoTag}</td>
+            <td style="text-align:right">
+              <div style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                ${actions}
+                <button class="btn btn-icon btn-ghost" type="button" data-action="send-invoice" data-href="${esc(stopInvoiceHref)}" aria-label="Enviar factura por WhatsApp" title="Enviar factura por WhatsApp" ${hasPhone ? '' : 'disabled'} style="color:#25D366">${ICONS.whatsappMono}</button>
+                <button class="btn btn-icon btn-ghost" type="button" data-action="unassign-route" data-id="${p.id}" aria-label="Quitar de la ruta" title="Quitar de la ruta">${ICONS.trash}</button>
+              </div>
+            </td>
+          </tr>`;
+        });
       }).join('\n');
 
       return `
@@ -1115,11 +1137,11 @@
               <div class="card-kicker">${esc(zoneLabel)}</div>
               <div class="card-title">${esc(m.name)}</div>
             </div>
-            <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${entries.length}</span><span>paquetes hoy</span></span>
+            <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${entries.length}</span><span>en esta ruta</span></span>
           </div>
           <div class="table-scroll">
-            <table class="table" style="margin-top:var(--space-2);min-width:640px">
-              <thead><tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo ($)</th><th>Costo (₡)</th><th style="text-align:right">Acciones</th></tr></thead>
+            <table class="table" style="margin-top:var(--space-2);min-width:760px">
+              <thead><tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot>
                 <tr>
@@ -1127,15 +1149,18 @@
                   <td style="text-align:right;font-family:var(--font-heading);font-weight:800">$${fmtMoney(totalCost)}</td>
                   <td style="text-align:right;font-family:var(--font-heading);font-weight:800">₡${fmtCRC(totalCostCRC)}</td>
                   <td></td>
+                  <td></td>
                 </tr>
               </tfoot>
             </table>
           </div>
-          ${entries.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-2)">Sin paquetes asignados hoy.</p>` : ''}
+          ${entries.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-2)">Sin paquetes asignados a este mensajero. Asígnalos desde "Registrar paquete".</p>` : ''}
           <div style="margin-top:var(--space-3);display:flex;flex-wrap:wrap;align-items:center;gap:10px">
-            <a href="${esc(waHref)}" target="_blank" rel="noopener" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none">
-              ${ICONS.whatsapp}<span>Enviar lista por WhatsApp</span>
-            </a>
+            ${pendingCount > 0 ? `
+              <a href="${esc(waHref)}" target="_blank" rel="noopener" class="wa-btn" style="width:fit-content;display:inline-flex;align-items:center;gap:8px;background:#25D366;color:#ffffff;font-family:var(--font-heading);font-weight:800;font-size:14px;padding:var(--space-2) calc(var(--space-3) * 1.2);border-radius:var(--radius-md);text-decoration:none">
+                ${ICONS.whatsapp}<span>Enviar lista por WhatsApp</span>
+              </a>
+            ` : ''}
             ${state.invoiceQueue && state.invoiceQueue.messengerId === m.id ? `
               ${state.invoiceQueue.index < state.invoiceQueue.hrefs.length ? `
                 <span class="text-muted">Factura ${state.invoiceQueue.index} de ${state.invoiceQueue.hrefs.length} enviada</span>
@@ -1161,9 +1186,8 @@
         <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:var(--space-6)">
           <div>
             <h1 style="margin-bottom:2px">Lista del día por mensajero</h1>
-            <p class="text-muted" style="margin:0">${esc(todayLabel())} — envía la ruta completa a cada mensajero en un solo mensaje.</p>
+            <p class="text-muted" style="margin:0">${esc(todayLabel())} — la ruta activa de cada mensajero. Los paquetes se asignan desde "Registrar paquete".</p>
           </div>
-          <button type="button" class="btn btn-secondary" data-action="mark-route-sent" ${anyPending ? '' : 'disabled'}>Marcar como enviada — vaciar lista</button>
         </div>
         ${dupZones.length > 0 ? `
           <div class="card elev-sm" style="border:1px solid #e0a800;background:#fdecc8;margin-bottom:var(--space-4)">
@@ -1172,15 +1196,6 @@
               Los paquetes de esas zonas salen duplicados: se cuentan dos veces en el total a cobrar y el cliente recibiría dos facturas.
             </p>
             <p style="margin:6px 0 0;font-size:13px;color:#8a5a00">${esc(dupZones.map(([z, names]) => `${z}: ${names.join(' y ')}`).join(' · '))}. Corrígelo en "Mensajeros" dejando la provincia en uno solo.</p>
-          </div>` : ''}
-        ${orphans.length > 0 ? `
-          <div class="card elev-sm" style="border:1px solid var(--color-accent-300);background:var(--color-accent-100);margin-bottom:var(--space-4)">
-            <p style="margin:0;font-size:15px">
-              <strong>${orphans.length} ${orphans.length === 1 ? 'paquete llegó' : 'paquetes llegaron'} pero no ${orphans.length === 1 ? 'aparece' : 'aparecen'} en ninguna ruta</strong>
-              — el cliente no tiene provincia, o ningún mensajero cubre esa provincia.
-              ${esc(orphans.slice(0, 5).map((p) => p.tracking).join(', '))}${orphans.length > 5 ? '…' : ''}
-            </p>
-            <p class="text-muted" style="margin:6px 0 0;font-size:13px">Asígnale provincia al cliente en "Clientes", o la provincia a un mensajero. No se van a marcar como enviados hasta que aparezcan en una ruta.</p>
           </div>` : ''}
         <div style="display:flex;flex-direction:column;gap:var(--space-4)">${cards}</div>
       </div>`;
@@ -1290,7 +1305,7 @@
     return `
       <div>
         <h1 style="margin-bottom:2px">Historial de entregas</h1>
-        <p class="text-muted" style="margin-bottom:var(--space-6)">Paquetes ya marcados como enviados. Filtra y descarga el detalle en Excel.</p>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Paquetes ya entregados y pagados. Filtra y descarga el detalle en Excel.</p>
 
         <div class="card elev-sm" style="margin-bottom:var(--space-4)">
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--space-3)">
@@ -1352,7 +1367,7 @@
       </div>
       <div class="table-scroll">
         <table class="table" style="min-width:640px">
-          <thead><tr><th>Cliente</th><th>Tracking</th><th>Mensajero</th><th>Costo ($)</th><th>Costo (₡)</th><th>Fecha enviado</th></tr></thead>
+          <thead><tr><th>Cliente</th><th>Tracking</th><th>Mensajero</th><th>Costo ($)</th><th>Costo (₡)</th><th>Fecha pagado</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
@@ -1367,7 +1382,7 @@
 
   function exportHistoryCSV() {
     const rows = getHistoryRows();
-    const header = ['Cliente', 'Tracking', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Fecha enviado'];
+    const header = ['Cliente', 'Tracking', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Fecha pagado'];
     const lines = [header.join(',')].concat(rows.map((h) => [
       h.clientName, h.tracking, h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate), h.sentDate || '',
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')));
@@ -1480,38 +1495,52 @@
     });
   }
 
-  function unassignPkg(id) {
-    askConfirm('Quitar paquete', '¿Quitar este paquete de la ruta de hoy? Volverá a "Identificados — en tránsito", con el mismo cliente. Si hay que cambiar algo (monto, cliente, etc.), se edita desde ahí.', () => doUnassignPkg(id), 'Quitar');
+  function assignRoute(id) {
+    askConfirm('Asignar al mensajero', '¿Asignar este paquete a la ruta de hoy? Pasará a "Lista del día" para el mensajero de su zona.', () => doAssignRoute(id), 'Asignar');
   }
 
-  async function doUnassignPkg(id) {
+  async function doAssignRoute(id) {
     await withBusy(async () => {
-      await LF.db.unassignPackage(id);
+      await LF.db.assignToRoute(id, todayISO());
       await reloadPackages();
       render();
     });
   }
 
-  function markRouteSent() {
-    const ids = routeVisiblePackages().map((p) => p.id);
-    if (ids.length === 0) return;
-    askConfirm('Marcar como enviada', `¿Ya se envió y asignó todo lo de esta lista? Se cerrarán ${ids.length} ${ids.length === 1 ? 'paquete' : 'paquetes'} y la lista quedará vacía para la siguiente ruta — esto no se puede deshacer desde aquí.`, () => doMarkRouteSent(ids), 'Marcar como enviada');
+  function unassignRoute(id) {
+    askConfirm('Quitar de la ruta', '¿Quitar este paquete de la ruta? Volverá a "En Bodega — Por entregar" en Registrar paquete.', () => doUnassignRoute(id), 'Quitar');
   }
 
-  async function doMarkRouteSent(ids) {
+  async function doUnassignRoute(id) {
     await withBusy(async () => {
-      await LF.db.markRouteSent(ids, todayISO());
+      await LF.db.unassignRoute(id);
       await reloadPackages();
-      state.invoiceQueue = null;
       render();
     });
   }
 
-  function markPackageSent(id) {
-    askConfirm('Marcar como enviado', '¿Confirmas que este paquete ya fue enviado/entregado? Pasará al historial.', () => doMarkPackageSent(id), 'Confirmar');
+  function deliverPkg(id, paid) {
+    const title = paid ? 'Entregado — Pagado' : 'Entregado — Debe';
+    const msg = paid
+      ? '¿Confirmas que el mensajero ya entregó este paquete y el cliente ya pagó? Pasará al historial.'
+      : '¿Confirmas que el mensajero ya entregó este paquete, pero el cliente todavía no ha pagado? Se queda visible en Lista del día marcado como "Debe" hasta que se cobre.';
+    askConfirm(title, msg, () => doDeliverPkg(id, paid), 'Confirmar');
   }
 
-  async function doMarkPackageSent(id) {
+  async function doDeliverPkg(id, paid) {
+    await withBusy(async () => {
+      const today = todayISO();
+      await LF.db.markDelivered(id, { deliveredDate: today, paid, paidDate: paid ? today : null });
+      await reloadPackages();
+      render();
+    });
+  }
+
+  function markPaid(id) {
+    askConfirm('Marcar como pagado', '¿Confirmas que el cliente ya pagó este paquete? Pasará al historial.', () => doMarkPaid(id), 'Confirmar');
+  }
+
+  async function doMarkPaid(id) {
     await withBusy(async () => {
       await LF.db.markPackageSent(id, todayISO());
       await reloadPackages();
@@ -1665,9 +1694,10 @@
         render();
         return;
 
-      case 'unassign-pkg': return void unassignPkg(el.dataset.id);
-      case 'mark-route-sent': return void markRouteSent();
-      case 'mark-sent-one': return void markPackageSent(el.dataset.id);
+      case 'assign-route': return void assignRoute(el.dataset.id);
+      case 'unassign-route': return void unassignRoute(el.dataset.id);
+      case 'deliver-pkg': return void deliverPkg(el.dataset.id, el.dataset.paid === '1');
+      case 'mark-paid': return void markPaid(el.dataset.id);
 
       case 'clear-history-filters':
         state.historyFilters = { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' };

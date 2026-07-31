@@ -59,6 +59,10 @@ window.LF = window.LF || {};
       clientId: row.client_id,
       arrived: !!row.arrived,
       assignedDate: row.assigned_date,
+      routed: !!row.routed,
+      routedDate: row.routed_date,
+      delivered: !!row.delivered,
+      deliveredDate: row.delivered_date,
       sent: !!row.sent,
       sentDate: row.sent_date,
       createdAt: row.created_at,
@@ -153,31 +157,41 @@ window.LF = window.LF || {};
       return mapPackage(data);
     },
 
-    async unassignPackage(id) {
+    // The explicit "asignar al mensajero" step — a package with complete
+    // info doesn't go out on its own; an admin decides when it actually
+    // leaves for the route.
+    async assignToRoute(id, routedDate) {
       const { data, error } = await sb().from('packages')
-        .update({ arrived: false, assigned_date: null })
+        .update({ routed: true, routed_date: routedDate })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
     },
 
-    // Closes out the packages listed in "Lista del día". Takes the explicit
-    // ids the screen is showing rather than "every arrived-and-unsent row":
-    // a package whose client has no province (or a province no messenger
-    // covers) never appears on that screen, and used to get silently marked
-    // as delivered here — landing in the Historial as money collected for a
-    // delivery nobody made.
-    async markRouteSent(ids, sentDate) {
-      if (!Array.isArray(ids) || ids.length === 0) return;
-      const { error } = await sb().from('packages')
-        .update({ sent: true, sent_date: sentDate })
-        .in('id', ids).eq('sent', false);
+    // Pulls a package back off today's route — back to "por entregar",
+    // still arrived, still identified, just not headed out anymore.
+    async unassignRoute(id) {
+      const { data, error } = await sb().from('packages')
+        .update({ routed: false, routed_date: null, delivered: false, delivered_date: null, sent: false, sent_date: null })
+        .eq('id', id).select().single();
       throwIfError(error);
+      return mapPackage(data);
     },
 
-    // Same as markRouteSent but for a single package — lets an admin close
-    // out deliveries one at a time as messengers confirm them, instead of
-    // only all-at-once.
+    // The mensajero handed it over — paid or not yet. Only `paid` files it
+    // into Historial; "entregado pero debe" stays on Lista del día, flagged,
+    // until markPackageSent() below closes it out later.
+    async markDelivered(id, { deliveredDate, paid, paidDate }) {
+      const { data, error } = await sb().from('packages')
+        .update({ delivered: true, delivered_date: deliveredDate, sent: !!paid, sent_date: paid ? paidDate : null })
+        .eq('id', id).select().single();
+      throwIfError(error);
+      return mapPackage(data);
+    },
+
+    // Closes out a package once the client actually pays — the terminal
+    // state that files it into Historial. Also used to flip an already-
+    // delivered "debe" package to paid once the money comes in.
     async markPackageSent(id, sentDate) {
       const { data, error } = await sb().from('packages')
         .update({ sent: true, sent_date: sentDate })

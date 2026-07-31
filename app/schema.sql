@@ -74,6 +74,9 @@ create table if not exists public.packages (
   sent_date     date,
   created_at    timestamptz not null default now()
 );
+-- `sent`/`sent_date` are the terminal state: the client has paid. A package
+-- only files into Historial once this is true — not the moment it's
+-- delivered, since "entregado" and "cobrado" can happen on different days.
 alter table public.packages add column if not exists sent boolean not null default false;
 alter table public.packages add column if not exists sent_date date;
 -- A tracking can be logged the moment a client forwards it, before anyone
@@ -81,6 +84,15 @@ alter table public.packages add column if not exists sent_date date;
 -- be allowed blank until that's known.
 alter table public.packages alter column weight drop not null;
 alter table public.packages alter column cost drop not null;
+-- Being "en bodega" with complete info no longer sends a package out by
+-- itself — an admin has to explicitly assign it (`routed`) before it shows
+-- up on a mensajero's route, since a ready package might still need to wait
+-- (client not home that day, etc). `delivered` tracks whether the mensajero
+-- actually handed it over, independent of whether it's been paid yet.
+alter table public.packages add column if not exists routed boolean not null default false;
+alter table public.packages add column if not exists routed_date date;
+alter table public.packages add column if not exists delivered boolean not null default false;
+alter table public.packages add column if not exists delivered_date date;
 
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);
