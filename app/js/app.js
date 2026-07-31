@@ -88,8 +88,6 @@
     pkgDraft: { tracking: '', weight: '', cost: '', arrived: false },
     pkgListFilters: { query: '', estado: '' },
     pkgListPage: 1,
-    invoiceImportText: '',
-    invoiceImportPreview: null,
     session: null,
     loading: true,
     busy: false,
@@ -791,83 +789,6 @@
       .sort((a, b) => (b.p.createdAt || '').localeCompare(a.p.createdAt || ''));
   }
 
-  // ── validar contra factura ───────────────────────────────────────────────
-  // The same reconciliation Nana already does by hand, tracking by tracking:
-  // paste the invoice's "tracking peso" lines and this sorts them into what
-  // to do with each, without touching the database until she confirms.
-  function parseInvoiceLine(line) {
-    const trimmed = line.trim();
-    if (!trimmed) return null;
-    const m = trimmed.match(/^(\S+)[\s,;]+([\d]+(?:[.,]\d+)?)\s*(?:lb|libras)?\.?$/i);
-    if (!m) return { raw: trimmed, error: true };
-    const tracking = m[1];
-    const weight = parseFloat(m[2].replace(',', '.'));
-    if (!tracking || !isFinite(weight) || weight <= 0) return { raw: trimmed, error: true };
-    return { tracking, weight };
-  }
-
-  function buildInvoicePreview(text) {
-    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-    const actualizar = [], nuevo = [], yaEstaba = [], sinLeer = [];
-    const seen = new Set();
-    lines.forEach((line) => {
-      const parsed = parseInvoiceLine(line);
-      if (!parsed || parsed.error) { sinLeer.push(parsed ? parsed.raw : line); return; }
-      const key = normalize(parsed.tracking);
-      if (seen.has(key)) return; // misma línea pegada dos veces — solo cuenta la primera
-      seen.add(key);
-      const cost = Math.round(parsed.weight * state.settings.ratePerLb * 100) / 100;
-      const existing = state.packages.find((p) => normalize(p.tracking) === key);
-      if (existing && !existing.arrived) {
-        const c = existing.clientId ? clientById(existing.clientId) : null;
-        actualizar.push({ id: existing.id, tracking: existing.tracking, weight: parsed.weight, cost, clientLabel: c ? clientLabel(c) : 'Desconocido' });
-      } else if (existing && existing.arrived) {
-        yaEstaba.push({ tracking: existing.tracking });
-      } else {
-        nuevo.push({ tracking: parsed.tracking, weight: parsed.weight, cost });
-      }
-    });
-    return { actualizar, nuevo, yaEstaba, sinLeer };
-  }
-
-  function renderInvoiceImportCard() {
-    const preview = state.invoiceImportPreview;
-    return `
-      <div class="card elev-sm">
-        <div class="card-kicker">Validar contra factura</div>
-        <div class="card-title" style="margin-bottom:var(--space-2);font-size:17px">Revisar la factura de la encomienda</div>
-        <p class="card-body" style="margin-bottom:var(--space-2)">Pega una línea por paquete, tracking y peso (ej: <code>TBA912345678 3.5</code>). Los que ya tenías registrados se marcan como llegados con ese peso; los que no, se crean como <strong>Desconocidos</strong> — listos para identificarles el cliente después.</p>
-        <div class="field">
-          <textarea class="input" id="invoice-import-text" rows="5" placeholder="TBA912345678 3.5&#10;TBA912345679 1.2&#10;...">${esc(state.invoiceImportText)}</textarea>
-        </div>
-        <div style="display:flex;gap:var(--space-2)">
-          <button class="btn btn-primary" type="button" data-action="preview-invoice-import">Revisar</button>
-          ${preview ? `<button class="btn btn-secondary" type="button" data-action="cancel-invoice-import">Cancelar</button>` : ''}
-        </div>
-
-        ${preview ? `
-          <hr class="hr">
-          ${preview.actualizar.length ? `
-            <p style="margin:0 0 6px;font-family:var(--font-heading);font-weight:800;font-size:14px">Se marcarán como llegados (${preview.actualizar.length})</p>
-            <div class="table-scroll" style="margin-bottom:var(--space-3)">
-              <table class="table"><thead><tr><th>Tracking</th><th>Cliente</th><th>Peso nuevo</th></tr></thead>
-              <tbody>${preview.actualizar.map((r) => `<tr><td>${esc(r.tracking)}</td><td>${esc(r.clientLabel)}</td><td>${r.weight} lb</td></tr>`).join('')}</tbody></table>
-            </div>` : ''}
-          ${preview.nuevo.length ? `
-            <p style="margin:0 0 6px;font-family:var(--font-heading);font-weight:800;font-size:14px">Se crearán como Desconocidos (${preview.nuevo.length})</p>
-            <div class="table-scroll" style="margin-bottom:var(--space-3)">
-              <table class="table"><thead><tr><th>Tracking</th><th>Peso</th></tr></thead>
-              <tbody>${preview.nuevo.map((r) => `<tr><td>${esc(r.tracking)}</td><td>${r.weight} lb</td></tr>`).join('')}</tbody></table>
-            </div>` : ''}
-          ${preview.yaEstaba.length ? `<p class="text-muted" style="margin-bottom:var(--space-2)">Ya estaban marcados como llegados, se omiten (${preview.yaEstaba.length}): ${esc(preview.yaEstaba.map((r) => r.tracking).join(', '))}</p>` : ''}
-          ${preview.sinLeer.length ? `<p style="color:#b3261e;margin-bottom:var(--space-2)">No se pudieron leer (${preview.sinLeer.length}) — revisa el formato: ${esc(preview.sinLeer.join(' | '))}</p>` : ''}
-          ${(preview.actualizar.length || preview.nuevo.length) ? `
-            <button class="btn btn-primary" type="button" data-action="confirm-invoice-import">Confirmar importación</button>
-          ` : `<p class="text-muted" style="margin:0">Nada para importar todavía.</p>`}
-        ` : ''}
-      </div>`;
-  }
-
   function renderPaquete() {
     const editing = state.pkgEditingId ? state.packages.find((p) => p.id === state.pkgEditingId) : null;
     const draft = state.pkgDraft;
@@ -881,8 +802,7 @@
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez — o déjalo sin identificar si todavía no sabés de quién es. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:var(--space-4);align-items:start;margin-bottom:var(--space-8)">
-        <div class="card elev-sm" id="pkg-form-card">
+        <div class="card elev-sm" id="pkg-form-card" style="max-width:520px;margin-bottom:var(--space-8)">
           <div class="card-kicker">${editing ? 'Editar paquete' : 'Nuevo paquete'}</div>
           <div class="card-title" style="margin-bottom:var(--space-2)">Datos del paquete y cliente</div>
           <div class="field">
@@ -937,9 +857,6 @@
             <button class="btn btn-primary" type="button" id="pkg-submit" data-action="save-pkg" ${!draft.tracking.trim() ? 'disabled' : ''}>${editing ? 'Guardar cambios' : 'Crear paquete'}</button>
             ${editing ? `<button class="btn btn-secondary" type="button" data-action="cancel-pkg-edit">Cancelar</button>` : ''}
           </div>
-        </div>
-
-        ${renderInvoiceImportCard()}
         </div>
 
         <hr class="hr">
@@ -1484,22 +1401,6 @@
     });
   }
 
-  async function confirmInvoiceImport() {
-    const preview = state.invoiceImportPreview;
-    if (!preview || (!preview.actualizar.length && !preview.nuevo.length)) return;
-    await withBusy(async () => {
-      await LF.db.reconcileInvoice(
-        preview.actualizar.map((r) => ({ id: r.id, weight: r.weight, cost: r.cost })),
-        preview.nuevo.map((r) => ({ tracking: r.tracking, weight: r.weight, cost: r.cost })),
-        todayISO(),
-      );
-      await reloadPackages();
-      state.invoiceImportText = '';
-      state.invoiceImportPreview = null;
-      render();
-    });
-  }
-
   function markArrived(id) {
     askConfirm('Confirmar llegada', '¿Confirmas que este paquete ya está aquí y listo para el mensajero?', () => doMarkArrived(id), 'Confirmar');
   }
@@ -1697,20 +1598,6 @@
         render();
         return;
 
-      case 'preview-invoice-import': {
-        const text = (document.getElementById('invoice-import-text') || {}).value || '';
-        state.invoiceImportText = text;
-        state.invoiceImportPreview = buildInvoicePreview(text);
-        render();
-        return;
-      }
-      case 'confirm-invoice-import': return void confirmInvoiceImport();
-      case 'cancel-invoice-import':
-        state.invoiceImportText = '';
-        state.invoiceImportPreview = null;
-        render();
-        return;
-
       case 'assign-route': return void assignRoute(el.dataset.id);
       case 'unassign-route': return void unassignRoute(el.dataset.id);
       case 'deliver-pkg': return void deliverPkg(el.dataset.id, el.dataset.paid === '1');
@@ -1821,7 +1708,6 @@
       renderPkgList();
       return;
     }
-    if (id === 'invoice-import-text') { state.invoiceImportText = e.target.value; return; }
     if (id === 'client-search') {
       state.clientsPage = 1;
       renderClientList();

@@ -200,29 +200,6 @@ window.LF = window.LF || {};
       return mapPackage(data);
     },
 
-    // Mirrors how Nana actually reconciles the customs invoice by hand:
-    // trackings already logged (waiting to arrive) get marked arrived with
-    // the invoice's weight/cost; trackings nobody logged ahead of time get
-    // created fresh with no client, marked arrived, ready to be identified
-    // later. Updates go one at a time because each row gets a different
-    // weight/cost; creates go in a single insert since they're brand new rows.
-    async reconcileInvoice(updates, creates, assignedDate) {
-      for (const u of updates) {
-        const { error } = await sb().from('packages')
-          .update({ arrived: true, assigned_date: assignedDate, weight: u.weight, cost: u.cost })
-          .eq('id', u.id);
-        throwIfError(error);
-      }
-      if (creates.length) {
-        const { error } = await sb().from('packages')
-          .insert(creates.map((c) => ({
-            tracking: c.tracking, weight: c.weight, cost: c.cost,
-            client_id: null, arrived: true, assigned_date: assignedDate,
-          })));
-        throwIfError(error);
-      }
-    },
-
     // ── settings ─────────────────────────────────────────────────────────
     // maybeSingle(), not single(): if the settings row is ever missing, a
     // hard error here happens during boot and locks the whole app out. Falling
