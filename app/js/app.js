@@ -79,13 +79,13 @@
     settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE },
     clientsPage: 1,
     clientEditingId: null,
-    clientDraft: { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' },
+    clientDraft: { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
     messengerEditingId: null,
     messengerZonesDraft: [],
     messengerDraft: { name: '', phone: '', origin: '' },
     pkgEditingId: null,
     pkgSelectedClientId: null,
-    pkgDraft: { tracking: '', weight: '', cost: '' },
+    pkgDraft: { tracking: '', weight: '', cost: '', arrived: false },
     pkgListFilters: { query: '', estado: '' },
     pkgListPage: 1,
     invoiceImportText: '',
@@ -147,9 +147,20 @@
   // the app doesn't mean giving up the shorthand she already knows by memory.
   // Messages that go out to clients/mensajeros keep using the plain name —
   // this is purely for the admin-facing screens.
+  function formatClientCode(seq) {
+    return seq ? `JG-${String(seq).padStart(2, '0')}` : '';
+  }
+
+  // The next code a brand-new client will get, shown as a preview before
+  // they're saved (the real value only exists once the DB assigns it).
+  function nextClientCodeSeq() {
+    return state.clients.reduce((max, c) => Math.max(max, c.codeSeq || 0), 0) + 1;
+  }
+
   function clientLabel(c) {
     if (!c) return '';
-    return c.code ? `${c.code} — ${c.name}` : c.name;
+    const code = formatClientCode(c.codeSeq);
+    return code ? `${code} — ${c.name}` : c.name;
   }
 
   // Costa Rica bounding box, used to reject false-positive number pairs
@@ -469,12 +480,12 @@
           <div class="field">
             <label>Peso por libra ($/lb)</label>
             <input class="input" id="settings-rate-per-lb" type="number" step="0.01" min="0" value="${esc(s.ratePerLb)}">
-            <p class="text-muted" style="margin-top:4px;font-size:13px">Se usa para calcular el costo estimado al registrar un paquete.</p>
+            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se usa para calcular el costo estimado al registrar un paquete.</p>
           </div>
           <div class="field">
             <label>Tipo de cambio (₡ por $)</label>
             <input class="input" id="settings-crc-rate" type="number" step="1" min="0" value="${esc(s.crcRate)}">
-            <p class="text-muted" style="margin-top:4px;font-size:13px">Se usa para mostrar los costos en colones en las listas y facturas.</p>
+            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se usa para mostrar los costos en colones en las listas y facturas.</p>
           </div>
         </div>
       </div>`;
@@ -567,13 +578,13 @@
 
         <div class="card elev-sm" id="client-form-card" style="max-width:560px;margin-bottom:var(--space-8)">
           <div class="field">
-            <label>Nombre completo *</label>
-            <input class="input" id="client-name" type="text" value="${esc(f.name)}" placeholder="Ej: María Fernández Solís">
+            <label>Nombre y apellido *</label>
+            <input class="input" id="client-name" type="text" value="${esc(f.name)}" placeholder="Ej: María Fernández">
           </div>
           <div class="field">
-            <label>Código de cliente — opcional</label>
-            <input class="input" id="client-code" type="text" value="${esc(f.code)}" placeholder="Ej: JG-238">
-            <p class="text-muted" style="margin-top:4px;font-size:13px">El código corto que ya usan para identificar clientes — se puede buscar por él en Registrar paquete.</p>
+            <label>Código de cliente</label>
+            <input class="input" id="client-code" type="text" value="${esc(editing ? formatClientCode(editing.codeSeq) : formatClientCode(nextClientCodeSeq()))}" disabled>
+            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se asigna solo, en orden — el mismo tipo de código que ya usan para identificar clientes.</p>
           </div>
           <div class="field">
             <label>Teléfono *</label>
@@ -627,7 +638,7 @@
     const filtered = q
       ? state.clients.filter((c) =>
           normalize(c.name).includes(q) ||
-          normalize(c.code || '').includes(q) ||
+          normalize(formatClientCode(c.codeSeq)).includes(q) ||
           normalize(c.phone).includes(q) ||
           normalize(c.province).includes(q) ||
           normalize(c.canton).includes(q))
@@ -642,7 +653,7 @@
       const incomplete = !c.address || !c.province;
       return `
         <tr>
-          <td>${esc(c.code || '—')}</td>
+          <td>${esc(formatClientCode(c.codeSeq) || '—')}</td>
           <td>${esc(c.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Falta info</span>' : ''}</td>
           <td><span class="tag tag-neutral">${esc(c.province || 'Sin provincia')}</span></td>
           <td>${esc(c.canton || '—')}</td>
@@ -678,7 +689,7 @@
     const q = normalize(query).trim();
     if (!q) return '';
     const matches = state.clients
-      .filter((c) => normalize(c.name).includes(q) || normalize(c.code || '').includes(q))
+      .filter((c) => normalize(c.name).includes(q) || normalize(formatClientCode(c.codeSeq)).includes(q))
       .slice(0, 6);
     if (matches.length === 0) return `<p class="text-muted">Sin coincidencias. Revisa el nombre/código o agrégalo en "Clientes".</p>`;
     const items = matches.map((c) => {
@@ -699,11 +710,10 @@
     const btn = document.getElementById('pkg-submit');
     if (!btn) return;
     const tracking = (document.getElementById('pkg-tracking') || {}).value || '';
-    const weight = (document.getElementById('pkg-weight') || {}).value || '';
-    // Cliente is no longer required here — a package that arrives on the
-    // customs invoice with no one having claimed it yet still needs to exist
-    // (tracking + weight), same as Nana logging it as "Desconocidos" today.
-    btn.disabled = !(tracking.trim() && weight);
+    // Cliente and peso are no longer required here — a tracking someone just
+    // forwarded, with nothing else known yet, still needs to exist so it
+    // isn't lost before the invoice/weight catches up to it.
+    btn.disabled = !tracking.trim();
   }
 
   function updatePkgCostCRC() {
@@ -730,7 +740,7 @@
         const estado = c ? 'esperando-llegada' : 'sin-cliente';
         return { p, c, estado };
       })
-      .filter(({ p, c }) => !q || normalize(p.tracking).includes(q) || (c && (normalize(c.name).includes(q) || normalize(c.code || '').includes(q))))
+      .filter(({ p, c }) => !q || normalize(p.tracking).includes(q) || (c && (normalize(c.name).includes(q) || normalize(formatClientCode(c.codeSeq)).includes(q))))
       .filter(({ estado }) => !f.estado || f.estado === estado)
       .sort((a, b) => (b.p.createdAt || '').localeCompare(a.p.createdAt || ''));
   }
@@ -777,7 +787,7 @@
   function renderInvoiceImportCard() {
     const preview = state.invoiceImportPreview;
     return `
-      <div class="card elev-sm" style="max-width:640px;margin-bottom:var(--space-8)">
+      <div class="card elev-sm">
         <div class="card-kicker">Validar contra factura</div>
         <div class="card-title" style="margin-bottom:var(--space-2);font-size:17px">Revisar la factura de la encomienda</div>
         <p class="card-body" style="margin-bottom:var(--space-2)">Pega una línea por paquete, tracking y peso (ej: <code>TBA912345678 3.5</code>). Los que ya tenías registrados se marcan como llegados con ese peso; los que no, se crean como <strong>Desconocidos</strong> — listos para identificarles el cliente después.</p>
@@ -825,7 +835,8 @@
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez — o déjalo sin identificar si todavía no sabés de quién es. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
 
-        <div class="card elev-sm" id="pkg-form-card" style="max-width:520px;margin-bottom:var(--space-8)">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:var(--space-4);align-items:start;margin-bottom:var(--space-8)">
+        <div class="card elev-sm" id="pkg-form-card">
           <div class="card-kicker">${editing ? 'Editar paquete' : 'Nuevo paquete'}</div>
           <div class="card-title" style="margin-bottom:var(--space-2)">Datos del paquete y cliente</div>
           <div class="field">
@@ -833,13 +844,20 @@
             <input class="input" id="pkg-tracking" type="text" value="${esc(draft.tracking)}" placeholder="Ej: TBA912345678">
           </div>
           <div class="field">
-            <label>Peso (libras)</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:5px">
+              <input type="checkbox" id="pkg-arrived" ${draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
+              <span>Estado: <strong>${draft.arrived ? 'En Bodega' : 'En Tránsito'}</strong></span>
+            </label>
+            <p class="text-muted" style="margin:0;font-size:13px">Marcalo solo cuando ya llegó físicamente. Si el cliente apenas avisó que lo compró, dejalo así.</p>
+          </div>
+          <div class="field">
+            <label>Peso (libras) — opcional</label>
             <input class="input" id="pkg-weight" type="number" step="0.1" min="0" value="${esc(draft.weight)}" placeholder="Ej: 3.5">
           </div>
           <div class="field">
             <label>Costo estimado ($${state.settings.ratePerLb}/lb) — editable</label>
             <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
-            <p class="text-muted" id="pkg-cost-crc" style="margin-top:4px;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
+            <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
           </div>
 
           ${!selectedClient ? `
@@ -863,12 +881,13 @@
           `}
 
           <div style="display:flex;gap:var(--space-2)">
-            <button class="btn btn-primary" type="button" id="pkg-submit" data-action="save-pkg" ${!(draft.tracking.trim() && draft.weight) ? 'disabled' : ''}>${editing ? 'Guardar cambios' : 'Crear paquete'}</button>
+            <button class="btn btn-primary" type="button" id="pkg-submit" data-action="save-pkg" ${!draft.tracking.trim() ? 'disabled' : ''}>${editing ? 'Guardar cambios' : 'Crear paquete'}</button>
             ${editing ? `<button class="btn btn-secondary" type="button" data-action="cancel-pkg-edit">Cancelar</button>` : ''}
           </div>
         </div>
 
         ${renderInvoiceImportCard()}
+        </div>
 
         <hr class="hr">
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Paquetes pendientes</h4>
@@ -915,9 +934,9 @@
           <td>${esc((p.createdAt || '').slice(0, 10) || '—')}</td>
           <td>${esc(p.tracking)}</td>
           <td>${clienteCell}</td>
-          <td>${p.weight} lb</td>
-          <td>$${fmtMoney(p.cost)}</td>
-          <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
+          <td>${p.weight != null ? p.weight + ' lb' : '<span class="text-muted">—</span>'}</td>
+          <td>${p.cost != null ? '$' + fmtMoney(p.cost) : '<span class="text-muted">—</span>'}</td>
+          <td>${p.cost != null ? '₡' + fmtCRC(p.cost * state.settings.crcRate) : '<span class="text-muted">—</span>'}</td>
           <td><span class="tag tag-neutral">${esc(estadoLabel)}</span></td>
           <td style="text-align:right;white-space:nowrap">
             <div style="display:inline-flex;gap:6px;align-items:center">
@@ -1187,7 +1206,7 @@
           <div class="field">
             <label>Punto de salida — enlace de Waze o Google Maps *</label>
             <input class="input" id="messenger-origin" type="url" value="${esc(f.origin)}" placeholder="Ej: https://waze.com/ul/hd6... o https://maps.app.goo.gl/...">
-            <p class="text-muted" style="margin-top:4px;font-size:13px">Pega el link para compartir ubicación desde Waze o Google Maps.</p>
+            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Pega el link para compartir ubicación desde Waze o Google Maps.</p>
           </div>
           <div class="field">
             <label>Provincias que cubre</label>
@@ -1343,8 +1362,8 @@
   // ── actions ──────────────────────────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
-    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' }; }
-    if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '' }; }
+    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' }; }
+    if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '', arrived: false }; }
     if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; state.messengerError = ''; }
     render();
   }
@@ -1352,7 +1371,6 @@
   async function saveClient() {
     const name = document.getElementById('client-name').value;
     const phone = document.getElementById('client-phone').value;
-    const code = document.getElementById('client-code').value;
     const address = document.getElementById('client-address').value;
     const addressDetails = document.getElementById('client-address-details').value;
     const province = document.getElementById('client-province').value;
@@ -1360,13 +1378,13 @@
     if (!name.trim() || !phone.trim()) return;
     await withBusy(async () => {
       if (state.clientEditingId) {
-        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), code: code.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       } else {
-        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), code: code.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       }
       await reloadClients();
       state.clientEditingId = null;
-      state.clientDraft = { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' };
+      state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
       render();
     });
   }
@@ -1387,18 +1405,25 @@
     const tracking = document.getElementById('pkg-tracking').value;
     const weight = document.getElementById('pkg-weight').value;
     const cost = document.getElementById('pkg-cost').value;
-    if (!tracking.trim() || !weight) return;
-    const finalCost = cost ? parseFloat(cost) : parseFloat(weight) * state.settings.ratePerLb;
+    const arrived = document.getElementById('pkg-arrived').checked;
+    if (!tracking.trim()) return;
+    const finalWeight = weight ? parseFloat(weight) : null;
+    const finalCost = cost ? parseFloat(cost) : (finalWeight != null ? finalWeight * state.settings.ratePerLb : null);
+    const editing = state.pkgEditingId ? state.packages.find((p) => p.id === state.pkgEditingId) : null;
+    // Only stamp a fresh "llegó hoy" date the moment it actually flips to
+    // arrived — leaving an already-arrived package's original date alone
+    // when it's just being edited for something else (weight, cliente...).
+    const assignedDate = arrived ? (editing && editing.arrived ? editing.assignedDate : todayISO()) : null;
     await withBusy(async () => {
       if (state.pkgEditingId) {
-        await LF.db.updatePackage(state.pkgEditingId, { tracking: tracking.trim(), weight: parseFloat(weight), cost: finalCost, clientId: state.pkgSelectedClientId });
+        await LF.db.updatePackage(state.pkgEditingId, { tracking: tracking.trim(), weight: finalWeight, cost: finalCost, clientId: state.pkgSelectedClientId, arrived, assignedDate });
       } else {
-        await LF.db.createPackage({ tracking: tracking.trim(), weight: parseFloat(weight), cost: finalCost, clientId: state.pkgSelectedClientId });
+        await LF.db.createPackage({ tracking: tracking.trim(), weight: finalWeight, cost: finalCost, clientId: state.pkgSelectedClientId, arrived, assignedDate });
       }
       await reloadPackages();
       state.pkgEditingId = null;
       state.pkgSelectedClientId = null;
-      state.pkgDraft = { tracking: '', weight: '', cost: '' };
+      state.pkgDraft = { tracking: '', weight: '', cost: '', arrived: false };
       render();
     });
   }
@@ -1557,14 +1582,14 @@
         const c = clientById(el.dataset.id);
         if (!c) return;
         state.clientEditingId = c.id;
-        state.clientDraft = { name: c.name, phone: c.phone, code: c.code || '', address: c.address, addressDetails: c.addressDetails || '', province: c.province || '', canton: c.canton || '' };
+        state.clientDraft = { name: c.name, phone: c.phone, address: c.address, addressDetails: c.addressDetails || '', province: c.province || '', canton: c.canton || '' };
         render();
         scrollToForm('client-form-card');
         return;
       }
       case 'cancel-edit-client':
         state.clientEditingId = null;
-        state.clientDraft = { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' };
+        state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
         render(); return;
       case 'save-client': return void saveClient();
       case 'delete-client': return void deleteClient(el.dataset.id);
@@ -1580,13 +1605,13 @@
       case 'save-pkg': return void savePkg();
       case 'cancel-pkg-edit':
         state.pkgEditingId = null; state.pkgSelectedClientId = null;
-        state.pkgDraft = { tracking: '', weight: '', cost: '' };
+        state.pkgDraft = { tracking: '', weight: '', cost: '', arrived: false };
         render(); return;
       case 'edit-pkg': {
         const p = state.packages.find((x) => x.id === el.dataset.id);
         if (!p) return;
         state.pkgEditingId = p.id; state.pkgSelectedClientId = p.clientId;
-        state.pkgDraft = { tracking: p.tracking, weight: String(p.weight), cost: String(p.cost) };
+        state.pkgDraft = { tracking: p.tracking, weight: p.weight == null ? '' : String(p.weight), cost: p.cost == null ? '' : String(p.cost), arrived: p.arrived };
         render();
         scrollToForm('pkg-form-card');
         return;
@@ -1732,7 +1757,6 @@
       return;
     }
     if (id === 'client-name') { state.clientDraft.name = e.target.value; return; }
-    if (id === 'client-code') { state.clientDraft.code = e.target.value; return; }
     if (id === 'client-phone') { state.clientDraft.phone = e.target.value; return; }
     if (id === 'client-address') { state.clientDraft.address = e.target.value; return; }
     if (id === 'client-address-details') { state.clientDraft.addressDetails = e.target.value; return; }
@@ -1755,6 +1779,11 @@
   });
 
   document.body.addEventListener('change', (e) => {
+    if (e.target.id === 'pkg-arrived') {
+      state.pkgDraft.arrived = e.target.checked;
+      render();
+      return;
+    }
     if (e.target.id === 'client-province') {
       // Changing province invalidates whatever canton was picked for the old
       // one, so clear it — a full render() also refreshes the canton

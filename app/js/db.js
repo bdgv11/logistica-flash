@@ -36,7 +36,7 @@ window.LF = window.LF || {};
 
   function mapClient(row) {
     return {
-      id: row.id, name: row.name, phone: row.phone, code: row.code || '',
+      id: row.id, name: row.name, phone: row.phone, codeSeq: row.code_seq,
       address: row.address || '', addressDetails: row.address_details || '',
       province: row.province || '', canton: row.canton || '',
     };
@@ -54,8 +54,8 @@ window.LF = window.LF || {};
     return {
       id: row.id,
       tracking: row.tracking,
-      weight: Number(row.weight),
-      cost: Number(row.cost),
+      weight: row.weight == null ? null : Number(row.weight),
+      cost: row.cost == null ? null : Number(row.cost),
       clientId: row.client_id,
       arrived: !!row.arrived,
       assignedDate: row.assigned_date,
@@ -71,17 +71,17 @@ window.LF = window.LF || {};
       return (await selectAll('clients')).map(mapClient);
     },
 
-    async createClient({ name, phone, code, address, addressDetails, province, canton }) {
+    async createClient({ name, phone, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .insert({ name, phone, code: code || '', address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
+        .insert({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .select().single();
       throwIfError(error);
       return mapClient(data);
     },
 
-    async updateClient(id, { name, phone, code, address, addressDetails, province, canton }) {
+    async updateClient(id, { name, phone, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .update({ name, phone, code: code || '', address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
+        .update({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapClient(data);
@@ -123,17 +123,23 @@ window.LF = window.LF || {};
       return (await selectAll('packages')).map(mapPackage);
     },
 
-    async createPackage({ tracking, weight, cost, clientId }) {
+    async createPackage({ tracking, weight, cost, clientId, arrived, assignedDate }) {
       const { data, error } = await sb().from('packages')
-        .insert({ tracking, weight, cost, client_id: clientId, arrived: false, assigned_date: null })
+        .insert({
+          tracking, weight, cost,
+          client_id: clientId, arrived: !!arrived, assigned_date: arrived ? assignedDate : null,
+        })
         .select().single();
       throwIfError(error);
       return mapPackage(data);
     },
 
-    async updatePackage(id, { tracking, weight, cost, clientId }) {
+    async updatePackage(id, { tracking, weight, cost, clientId, arrived, assignedDate }) {
       const { data, error } = await sb().from('packages')
-        .update({ tracking, weight, cost, client_id: clientId })
+        .update({
+          tracking, weight, cost,
+          client_id: clientId, arrived: !!arrived, assigned_date: arrived ? assignedDate : null,
+        })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
