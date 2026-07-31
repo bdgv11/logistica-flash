@@ -132,6 +132,23 @@
     return raw.charAt(0).toUpperCase() + raw.slice(1);
   }
 
+  function greeting() {
+    const h = new Date().getHours();
+    if (h < 12) return 'Buenos días';
+    if (h < 19) return 'Buenas tardes';
+    return 'Buenas noches';
+  }
+
+  // Costa Rica reads dates as día/mes/año, not the ISO yyyy-mm-dd the DB
+  // stores them as — this is purely for display, never for <input
+  // type="date"> values (those must stay ISO or the browser rejects them).
+  function fmtDateCR(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    if (!y || !m || !d) return iso;
+    return `${d}/${m}/${y}`;
+  }
+
   function messengerForZone(province) {
     if (!province) return null;
     return state.messengers.find((m) => Array.isArray(m.zones) && m.zones.includes(province)) || null;
@@ -518,7 +535,7 @@
         <div style="position:relative;overflow:hidden;border-radius:var(--radius-lg);background:linear-gradient(135deg, var(--color-accent-800) 0%, var(--color-accent-600) 45%, var(--color-accent-500) 100%);padding:var(--space-6) var(--space-6);margin-bottom:var(--space-6);isolation:isolate">
           <div style="position:relative;z-index:1">
             <h6 style="margin-bottom:2px;color:var(--color-accent-100);font-weight:700;letter-spacing:0.02em;text-transform:uppercase;font-size:12px">${esc(todayLabel())}</h6>
-            <h1 style="margin-bottom:0;color:#ffffff">Buenos días</h1>
+            <h1 style="margin-bottom:0;color:#ffffff">${esc(greeting())}</h1>
           </div>
         </div>
 
@@ -979,7 +996,7 @@
       }
       return `
         <tr>
-          <td>${esc((p.createdAt || '').slice(0, 10) || '—')}</td>
+          <td>${esc(fmtDateCR((p.createdAt || '').slice(0, 10)) || '—')}</td>
           <td>${esc(p.tracking)}</td>
           <td>${clienteCell}</td>
           <td>${p.weight != null ? p.weight + ' lb' : '<span class="text-muted">—</span>'}</td>
@@ -1355,7 +1372,7 @@
         <td>${esc(h.messengerName)}</td>
         <td>$${fmtMoney(h.cost)}</td>
         <td>₡${fmtCRC(h.cost * state.settings.crcRate)}</td>
-        <td>${esc(h.sentDate || '—')}</td>
+        <td>${esc(fmtDateCR(h.sentDate) || '—')}</td>
       </tr>`).join('\n');
 
     container.innerHTML = `
@@ -1384,7 +1401,7 @@
     const rows = getHistoryRows();
     const header = ['Cliente', 'Tracking', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Fecha pagado'];
     const lines = [header.join(',')].concat(rows.map((h) => [
-      h.clientName, h.tracking, h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate), h.sentDate || '',
+      h.clientName, h.tracking, h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate), fmtDateCR(h.sentDate),
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')));
     const csv = '\uFEFF' + lines.join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
