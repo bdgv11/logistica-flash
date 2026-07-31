@@ -499,10 +499,12 @@
     const incompleteClients = state.clients.filter((c) => !c.address || !c.province).length;
     const pending = state.packages.filter((p) => !p.clientId).length;
     const esperandoLlegada = state.packages.filter((p) => p.clientId && !p.arrived).length;
+    const bodegaIncompleto = state.packages.filter((p) => p.clientId && p.arrived && !p.sent && !pkgInfoComplete(p)).length;
 
     const parts = [];
     if (pending > 0) parts.push(`${pending} sin identificar`);
     if (esperandoLlegada > 0) parts.push(`${esperandoLlegada} esperando llegada`);
+    if (bodegaIncompleto > 0) parts.push(`${bodegaIncompleto} en bodega sin completar`);
     const hasPending = parts.length > 0;
     const cardStyle = hasPending ? 'border:1px solid var(--color-accent-300);background:var(--color-accent-100);gap:var(--space-3)' : '';
     const message = hasPending
@@ -723,12 +725,20 @@
     el.textContent = cost ? '≈ ₡' + fmtCRC(parseFloat(cost) * state.settings.crcRate) : '';
   }
 
+  // A package can be marked "En Bodega" the moment it physically shows up,
+  // even before anyone's filled in who it belongs to or what it weighs —
+  // but it can't go out with a mensajero missing that. This is the one
+  // gate that decides whether it's actually ready to route.
+  function pkgInfoComplete(p) {
+    return !!p.clientId && p.weight != null && p.cost != null;
+  }
+
   // Everything still in play before it becomes a routable, sent delivery:
-  // waiting to physically arrive (has a client already) or waiting to be
-  // identified (arrived or not, but no client yet — the "Desconocidos"
-  // bucket). Once sent, it belongs in Historial instead.
+  // waiting to physically arrive, or arrived but still missing the client
+  // and/or peso/costo it needs before it can go to a mensajero. Once sent,
+  // it belongs in Historial instead.
   function pendingPackages() {
-    return state.packages.filter((p) => !p.sent && (!p.clientId || !p.arrived));
+    return state.packages.filter((p) => !p.sent && (!p.arrived || !pkgInfoComplete(p)));
   }
 
   function getPkgListRows() {
@@ -737,7 +747,7 @@
     return pendingPackages()
       .map((p) => {
         const c = p.clientId ? clientById(p.clientId) : null;
-        const estado = c ? 'esperando-llegada' : 'sin-cliente';
+        const estado = !c ? 'sin-cliente' : p.arrived ? 'bodega-incompleto' : 'esperando-llegada';
         return { p, c, estado };
       })
       .filter(({ p, c }) => !q || normalize(p.tracking).includes(q) || (c && (normalize(c.name).includes(q) || normalize(formatClientCode(c.codeSeq)).includes(q))))
@@ -844,11 +854,18 @@
             <input class="input" id="pkg-tracking" type="text" value="${esc(draft.tracking)}" placeholder="Ej: TBA912345678">
           </div>
           <div class="field">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:5px">
-              <input type="checkbox" id="pkg-arrived" ${draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
-              <span>Estado: <strong>${draft.arrived ? 'En Bodega' : 'En Tránsito'}</strong></span>
-            </label>
-            <p class="text-muted" style="margin:0;font-size:13px">Marcalo solo cuando ya llegó físicamente. Si el cliente apenas avisó que lo compró, dejalo así.</p>
+            <label>Estado</label>
+            <div style="display:flex;gap:var(--space-4)">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+                <input type="radio" name="pkg-estado" id="pkg-estado-transito" value="transito" ${!draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
+                <span>En Tránsito / Pre-alerta</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+                <input type="radio" name="pkg-estado" id="pkg-estado-bodega" value="bodega" ${draft.arrived ? 'checked' : ''} style="width:16px;height:16px;flex:none">
+                <span>En Bodega</span>
+              </label>
+            </div>
+            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Marca "En Bodega" solo cuando ya llegó físicamente. Para salir con un mensajero necesita además cliente, peso y costo.</p>
           </div>
           <div class="field">
             <label>Peso (libras) — opcional</label>
@@ -903,6 +920,7 @@
               <select class="input" id="pkg-list-estado">
                 <option value="">Todos</option>
                 <option value="esperando-llegada" ${f.estado === 'esperando-llegada' ? 'selected' : ''}>Esperando llegada</option>
+                <option value="bodega-incompleto" ${f.estado === 'bodega-incompleto' ? 'selected' : ''}>En bodega — falta completar</option>
                 <option value="sin-cliente" ${f.estado === 'sin-cliente' ? 'selected' : ''}>Desconocidos — sin identificar</option>
               </select>
             </div>
@@ -924,11 +942,13 @@
     const tableRows = pageRows.map(({ p, c }) => {
       const clienteCell = c ? esc(clientLabel(c)) : `<span class="tag tag-warn">Desconocido</span>`;
       const estadoLabel = !c
-        ? (p.arrived ? 'Desconocido — en bodega' : 'Desconocido — no ha llegado')
-        : 'Esperando llegada';
+        ? (p.arrived ? 'Desconocido — en bodega' : 'Desconocido — en tránsito')
+        : (p.arrived ? 'En bodega — falta peso/costo' : 'Esperando llegada');
       const accion = !c
         ? `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Identificar cliente →</button>`
-        : `<button class="btn btn-primary" type="button" data-action="arrive-pkg" data-id="${p.id}">Marcar como llegado →</button>`;
+        : !p.arrived
+          ? `<button class="btn btn-primary" type="button" data-action="arrive-pkg" data-id="${p.id}">Marcar como llegado →</button>`
+          : `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Completar información →</button>`;
       return `
         <tr>
           <td>${esc((p.createdAt || '').slice(0, 10) || '—')}</td>
@@ -974,6 +994,7 @@
   // delivered and collected without anyone ever seeing them.
   function isRoutable(p) {
     if (!p.arrived || p.sent) return false;
+    if (!pkgInfoComplete(p)) return false;
     const c = clientById(p.clientId);
     if (!c || !c.province) return false;
     return state.messengers.some((m) => m.zones.includes(c.province));
@@ -983,8 +1004,11 @@
     return state.packages.filter(isRoutable);
   }
 
+  // Only the zone-gap case belongs here — a package still missing client or
+  // peso/costo isn't an "orphan", it's just not ready yet, and already shows
+  // up in Registrar paquete's pending list with what's left to fill in.
   function routeOrphanPackages() {
-    return state.packages.filter((p) => p.arrived && !p.sent && !isRoutable(p));
+    return state.packages.filter((p) => p.arrived && !p.sent && pkgInfoComplete(p) && !isRoutable(p));
   }
 
   // saveMessenger() now blocks new overlaps, but data saved before that check
@@ -1013,7 +1037,7 @@
     const anyPending = visiblePkgs.length > 0;
     const cards = state.messengers.map((m) => {
       const entries = state.packages
-        .filter((p) => p.arrived && !p.sent)
+        .filter((p) => p.arrived && !p.sent && pkgInfoComplete(p))
         .map((p) => ({ p, c: clientById(p.clientId) }))
         .filter(({ c }) => c && c.province && m.zones.includes(c.province));
 
@@ -1405,7 +1429,7 @@
     const tracking = document.getElementById('pkg-tracking').value;
     const weight = document.getElementById('pkg-weight').value;
     const cost = document.getElementById('pkg-cost').value;
-    const arrived = document.getElementById('pkg-arrived').checked;
+    const arrived = document.getElementById('pkg-estado-bodega').checked;
     if (!tracking.trim()) return;
     const finalWeight = weight ? parseFloat(weight) : null;
     const finalCost = cost ? parseFloat(cost) : (finalWeight != null ? finalWeight * state.settings.ratePerLb : null);
@@ -1779,8 +1803,8 @@
   });
 
   document.body.addEventListener('change', (e) => {
-    if (e.target.id === 'pkg-arrived') {
-      state.pkgDraft.arrived = e.target.checked;
+    if (e.target.name === 'pkg-estado') {
+      state.pkgDraft.arrived = e.target.value === 'bodega';
       render();
       return;
     }
