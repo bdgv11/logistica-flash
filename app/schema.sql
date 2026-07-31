@@ -28,11 +28,17 @@ create table if not exists public.clients (
   address_details text not null default '',
   province        text not null default '',
   canton          text not null default '',
+  code            text not null default '',
   created_at      timestamptz not null default now()
 );
 alter table public.clients add column if not exists address_details text not null default '';
 alter table public.clients add column if not exists province text not null default '';
 alter table public.clients add column if not exists canton text not null default '';
+-- Their own shorthand code for a client (e.g. "JG-238"), the way Nana already
+-- tags people by hand today — kept free-text, not auto-generated, since it's
+-- their scheme to keep, not one we're inventing for them.
+alter table public.clients add column if not exists code text not null default '';
+create index if not exists clients_code_idx on public.clients (code);
 
 -- Older deployments had a single `zone` column instead of province/canton —
 -- carry its value over into `province` (canton starts blank; edit each

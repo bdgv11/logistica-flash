@@ -36,7 +36,7 @@ window.LF = window.LF || {};
 
   function mapClient(row) {
     return {
-      id: row.id, name: row.name, phone: row.phone,
+      id: row.id, name: row.name, phone: row.phone, code: row.code || '',
       address: row.address || '', addressDetails: row.address_details || '',
       province: row.province || '', canton: row.canton || '',
     };
@@ -61,6 +61,7 @@ window.LF = window.LF || {};
       assignedDate: row.assigned_date,
       sent: !!row.sent,
       sentDate: row.sent_date,
+      createdAt: row.created_at,
     };
   }
 
@@ -70,17 +71,17 @@ window.LF = window.LF || {};
       return (await selectAll('clients')).map(mapClient);
     },
 
-    async createClient({ name, phone, address, addressDetails, province, canton }) {
+    async createClient({ name, phone, code, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .insert({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
+        .insert({ name, phone, code: code || '', address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .select().single();
       throwIfError(error);
       return mapClient(data);
     },
 
-    async updateClient(id, { name, phone, address, addressDetails, province, canton }) {
+    async updateClient(id, { name, phone, code, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .update({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
+        .update({ name, phone, code: code || '', address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapClient(data);
@@ -177,6 +178,29 @@ window.LF = window.LF || {};
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
+    },
+
+    // Mirrors how Nana actually reconciles the customs invoice by hand:
+    // trackings already logged (waiting to arrive) get marked arrived with
+    // the invoice's weight/cost; trackings nobody logged ahead of time get
+    // created fresh with no client, marked arrived, ready to be identified
+    // later. Updates go one at a time because each row gets a different
+    // weight/cost; creates go in a single insert since they're brand new rows.
+    async reconcileInvoice(updates, creates, assignedDate) {
+      for (const u of updates) {
+        const { error } = await sb().from('packages')
+          .update({ arrived: true, assigned_date: assignedDate, weight: u.weight, cost: u.cost })
+          .eq('id', u.id);
+        throwIfError(error);
+      }
+      if (creates.length) {
+        const { error } = await sb().from('packages')
+          .insert(creates.map((c) => ({
+            tracking: c.tracking, weight: c.weight, cost: c.cost,
+            client_id: null, arrived: true, assigned_date: assignedDate,
+          })));
+        throwIfError(error);
+      }
     },
 
     // ── settings ─────────────────────────────────────────────────────────

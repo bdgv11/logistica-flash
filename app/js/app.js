@@ -70,7 +70,6 @@
   const DEFAULT_RATE_PER_LB = 4.25;
   const DEFAULT_CRC_RATE = 525;
   const PAGE_SIZE = 10;
-  const WAITING_PAGE_SIZE = 8;
 
   const state = {
     tab: 'inicio',
@@ -80,14 +79,17 @@
     settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE },
     clientsPage: 1,
     clientEditingId: null,
-    clientDraft: { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
+    clientDraft: { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' },
     messengerEditingId: null,
     messengerZonesDraft: [],
     messengerDraft: { name: '', phone: '', origin: '' },
     pkgEditingId: null,
     pkgSelectedClientId: null,
     pkgDraft: { tracking: '', weight: '', cost: '' },
-    waitingPage: 1,
+    pkgListFilters: { query: '', estado: '' },
+    pkgListPage: 1,
+    invoiceImportText: '',
+    invoiceImportPreview: null,
     session: null,
     loading: true,
     busy: false,
@@ -137,6 +139,17 @@
 
   function clientZoneLabel(c) {
     return [c.province, c.canton].filter(Boolean).join(' — ') || 'Sin zona';
+  }
+
+  // Nana already tags every client by hand with her own code ("JG-238 Jorge
+  // Rivera") — this just keeps that same identification everywhere an admin
+  // looks a client up (search results, tables, historial), so switching to
+  // the app doesn't mean giving up the shorthand she already knows by memory.
+  // Messages that go out to clients/mensajeros keep using the plain name —
+  // this is purely for the admin-facing screens.
+  function clientLabel(c) {
+    if (!c) return '';
+    return c.code ? `${c.code} — ${c.name}` : c.name;
   }
 
   // Costa Rica bounding box, used to reject false-positive number pairs
@@ -307,12 +320,12 @@
     shellRoot.style.display = '';
     navRoot.innerHTML = renderNav();
     mainRoot.innerHTML = renderMain();
-    // renderMain() leaves #waiting-list as an empty container on the
+    // renderMain() leaves #pkg-table as an empty container on the
     // "paquete" tab — its rows are filled in separately so search/pagination
     // there can update without re-rendering the form above it. Any other
     // action that calls render() while on this tab must refill it too, or
     // the list silently disappears until something else refills it.
-    if (state.tab === 'paquete') renderWaitingList();
+    if (state.tab === 'paquete') renderPkgList();
     if (state.tab === 'clientes') renderClientList();
     if (state.tab === 'historial') renderHistoryList();
   }
@@ -558,6 +571,11 @@
             <input class="input" id="client-name" type="text" value="${esc(f.name)}" placeholder="Ej: María Fernández Solís">
           </div>
           <div class="field">
+            <label>Código de cliente — opcional</label>
+            <input class="input" id="client-code" type="text" value="${esc(f.code)}" placeholder="Ej: JG-238">
+            <p class="text-muted" style="margin-top:4px;font-size:13px">El código corto que ya usan para identificar clientes — se puede buscar por él en Registrar paquete.</p>
+          </div>
+          <div class="field">
             <label>Teléfono *</label>
             <input class="input" id="client-phone" type="tel" value="${esc(f.phone)}" placeholder="Ej: 8888-1234">
           </div>
@@ -593,8 +611,8 @@
 
         <h4 style="margin:var(--space-4) 0 var(--space-3)">Clientes guardados (${state.clients.length})</h4>
         <div class="field" style="max-width:320px">
-          <label>Buscar por nombre, zona o teléfono</label>
-          <input class="input" id="client-search" type="text" placeholder="Ej: María, Heredia, 8888...">
+          <label>Buscar por código, nombre, zona o teléfono</label>
+          <input class="input" id="client-search" type="text" placeholder="Ej: JG-238, María, Heredia, 8888...">
         </div>
         <div id="client-list"></div>
       </div>`;
@@ -609,6 +627,7 @@
     const filtered = q
       ? state.clients.filter((c) =>
           normalize(c.name).includes(q) ||
+          normalize(c.code || '').includes(q) ||
           normalize(c.phone).includes(q) ||
           normalize(c.province).includes(q) ||
           normalize(c.canton).includes(q))
@@ -623,6 +642,7 @@
       const incomplete = !c.address || !c.province;
       return `
         <tr>
+          <td>${esc(c.code || '—')}</td>
           <td>${esc(c.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Falta info</span>' : ''}</td>
           <td><span class="tag tag-neutral">${esc(c.province || 'Sin provincia')}</span></td>
           <td>${esc(c.canton || '—')}</td>
@@ -640,7 +660,7 @@
     container.innerHTML = `
       <div class="table-scroll">
         <table class="table">
-          <thead><tr><th>Nombre</th><th>Provincia</th><th>Cantón</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead>
+          <thead><tr><th>Código</th><th>Nombre</th><th>Provincia</th><th>Cantón</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -657,13 +677,15 @@
   function pkgMatchesHtml(query) {
     const q = normalize(query).trim();
     if (!q) return '';
-    const matches = state.clients.filter((c) => normalize(c.name).includes(q)).slice(0, 6);
-    if (matches.length === 0) return `<p class="text-muted">Sin coincidencias. Revisa el nombre o agrégalo en "Clientes".</p>`;
+    const matches = state.clients
+      .filter((c) => normalize(c.name).includes(q) || normalize(c.code || '').includes(q))
+      .slice(0, 6);
+    if (matches.length === 0) return `<p class="text-muted">Sin coincidencias. Revisa el nombre/código o agrégalo en "Clientes".</p>`;
     const items = matches.map((c) => {
       const mm = messengerForZone(c.province);
       return `
         <button type="button" data-action="select-pkg-client" data-id="${c.id}" class="btn btn-secondary" style="justify-content:space-between;text-align:left;height:auto;padding:var(--space-2)">
-          <span>${esc(c.name)}</span>
+          <span>${esc(clientLabel(c))}</span>
           <span style="display:flex;gap:6px">
             <span class="tag tag-neutral">${esc(clientZoneLabel(c))}</span>
             <span class="tag tag-accent">${esc(mm ? mm.name : 'Sin mensajero')}</span>
@@ -678,7 +700,10 @@
     if (!btn) return;
     const tracking = (document.getElementById('pkg-tracking') || {}).value || '';
     const weight = (document.getElementById('pkg-weight') || {}).value || '';
-    btn.disabled = !(tracking.trim() && weight && state.pkgSelectedClientId);
+    // Cliente is no longer required here — a package that arrives on the
+    // customs invoice with no one having claimed it yet still needs to exist
+    // (tracking + weight), same as Nana logging it as "Desconocidos" today.
+    btn.disabled = !(tracking.trim() && weight);
   }
 
   function updatePkgCostCRC() {
@@ -688,21 +713,117 @@
     el.textContent = cost ? '≈ ₡' + fmtCRC(parseFloat(cost) * state.settings.crcRate) : '';
   }
 
+  // Everything still in play before it becomes a routable, sent delivery:
+  // waiting to physically arrive (has a client already) or waiting to be
+  // identified (arrived or not, but no client yet — the "Desconocidos"
+  // bucket). Once sent, it belongs in Historial instead.
+  function pendingPackages() {
+    return state.packages.filter((p) => !p.sent && (!p.clientId || !p.arrived));
+  }
+
+  function getPkgListRows() {
+    const f = state.pkgListFilters;
+    const q = normalize(f.query).trim();
+    return pendingPackages()
+      .map((p) => {
+        const c = p.clientId ? clientById(p.clientId) : null;
+        const estado = c ? 'esperando-llegada' : 'sin-cliente';
+        return { p, c, estado };
+      })
+      .filter(({ p, c }) => !q || normalize(p.tracking).includes(q) || (c && (normalize(c.name).includes(q) || normalize(c.code || '').includes(q))))
+      .filter(({ estado }) => !f.estado || f.estado === estado)
+      .sort((a, b) => (b.p.createdAt || '').localeCompare(a.p.createdAt || ''));
+  }
+
+  // ── validar contra factura ───────────────────────────────────────────────
+  // The same reconciliation Nana already does by hand, tracking by tracking:
+  // paste the invoice's "tracking peso" lines and this sorts them into what
+  // to do with each, without touching the database until she confirms.
+  function parseInvoiceLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    const m = trimmed.match(/^(\S+)[\s,;]+([\d]+(?:[.,]\d+)?)\s*(?:lb|libras)?\.?$/i);
+    if (!m) return { raw: trimmed, error: true };
+    const tracking = m[1];
+    const weight = parseFloat(m[2].replace(',', '.'));
+    if (!tracking || !isFinite(weight) || weight <= 0) return { raw: trimmed, error: true };
+    return { tracking, weight };
+  }
+
+  function buildInvoicePreview(text) {
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const actualizar = [], nuevo = [], yaEstaba = [], sinLeer = [];
+    const seen = new Set();
+    lines.forEach((line) => {
+      const parsed = parseInvoiceLine(line);
+      if (!parsed || parsed.error) { sinLeer.push(parsed ? parsed.raw : line); return; }
+      const key = normalize(parsed.tracking);
+      if (seen.has(key)) return; // misma línea pegada dos veces — solo cuenta la primera
+      seen.add(key);
+      const cost = Math.round(parsed.weight * state.settings.ratePerLb * 100) / 100;
+      const existing = state.packages.find((p) => normalize(p.tracking) === key);
+      if (existing && !existing.arrived) {
+        const c = existing.clientId ? clientById(existing.clientId) : null;
+        actualizar.push({ id: existing.id, tracking: existing.tracking, weight: parsed.weight, cost, clientLabel: c ? clientLabel(c) : 'Desconocido' });
+      } else if (existing && existing.arrived) {
+        yaEstaba.push({ tracking: existing.tracking });
+      } else {
+        nuevo.push({ tracking: parsed.tracking, weight: parsed.weight, cost });
+      }
+    });
+    return { actualizar, nuevo, yaEstaba, sinLeer };
+  }
+
+  function renderInvoiceImportCard() {
+    const preview = state.invoiceImportPreview;
+    return `
+      <div class="card elev-sm" style="max-width:640px;margin-bottom:var(--space-8)">
+        <div class="card-kicker">Validar contra factura</div>
+        <div class="card-title" style="margin-bottom:var(--space-2);font-size:17px">Revisar la factura de la encomienda</div>
+        <p class="card-body" style="margin-bottom:var(--space-2)">Pega una línea por paquete, tracking y peso (ej: <code>TBA912345678 3.5</code>). Los que ya tenías registrados se marcan como llegados con ese peso; los que no, se crean como <strong>Desconocidos</strong> — listos para identificarles el cliente después.</p>
+        <div class="field">
+          <textarea class="input" id="invoice-import-text" rows="5" placeholder="TBA912345678 3.5&#10;TBA912345679 1.2&#10;...">${esc(state.invoiceImportText)}</textarea>
+        </div>
+        <div style="display:flex;gap:var(--space-2)">
+          <button class="btn btn-primary" type="button" data-action="preview-invoice-import">Revisar</button>
+          ${preview ? `<button class="btn btn-secondary" type="button" data-action="cancel-invoice-import">Cancelar</button>` : ''}
+        </div>
+
+        ${preview ? `
+          <hr class="hr">
+          ${preview.actualizar.length ? `
+            <p style="margin:0 0 6px;font-family:var(--font-heading);font-weight:800;font-size:14px">Se marcarán como llegados (${preview.actualizar.length})</p>
+            <div class="table-scroll" style="margin-bottom:var(--space-3)">
+              <table class="table"><thead><tr><th>Tracking</th><th>Cliente</th><th>Peso nuevo</th></tr></thead>
+              <tbody>${preview.actualizar.map((r) => `<tr><td>${esc(r.tracking)}</td><td>${esc(r.clientLabel)}</td><td>${r.weight} lb</td></tr>`).join('')}</tbody></table>
+            </div>` : ''}
+          ${preview.nuevo.length ? `
+            <p style="margin:0 0 6px;font-family:var(--font-heading);font-weight:800;font-size:14px">Se crearán como Desconocidos (${preview.nuevo.length})</p>
+            <div class="table-scroll" style="margin-bottom:var(--space-3)">
+              <table class="table"><thead><tr><th>Tracking</th><th>Peso</th></tr></thead>
+              <tbody>${preview.nuevo.map((r) => `<tr><td>${esc(r.tracking)}</td><td>${r.weight} lb</td></tr>`).join('')}</tbody></table>
+            </div>` : ''}
+          ${preview.yaEstaba.length ? `<p class="text-muted" style="margin-bottom:var(--space-2)">Ya estaban marcados como llegados, se omiten (${preview.yaEstaba.length}): ${esc(preview.yaEstaba.map((r) => r.tracking).join(', '))}</p>` : ''}
+          ${preview.sinLeer.length ? `<p style="color:#b3261e;margin-bottom:var(--space-2)">No se pudieron leer (${preview.sinLeer.length}) — revisa el formato: ${esc(preview.sinLeer.join(' | '))}</p>` : ''}
+          ${(preview.actualizar.length || preview.nuevo.length) ? `
+            <button class="btn btn-primary" type="button" data-action="confirm-invoice-import">Confirmar importación</button>
+          ` : `<p class="text-muted" style="margin:0">Nada para importar todavía.</p>`}
+        ` : ''}
+      </div>`;
+  }
+
   function renderPaquete() {
     const editing = state.pkgEditingId ? state.packages.find((p) => p.id === state.pkgEditingId) : null;
     const draft = state.pkgDraft;
 
     const selectedClient = state.pkgSelectedClientId ? clientById(state.pkgSelectedClientId) : null;
     const selectedMessenger = selectedClient ? messengerForZone(selectedClient.province) : null;
-
-    const waitingAll = state.packages.filter((p) => p.clientId && !p.arrived)
-      .map((p) => ({ p, c: clientById(p.clientId) }))
-      .sort((a, b) => (a.c ? a.c.name : '').localeCompare(b.c ? b.c.name : '', 'es'));
+    const f = state.pkgListFilters;
 
     return `
       <div>
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
-        <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez — o déjalo sin identificar si todavía no sabés de quién es. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
 
         <div class="card elev-sm" id="pkg-form-card" style="max-width:520px;margin-bottom:var(--space-8)">
           <div class="card-kicker">${editing ? 'Editar paquete' : 'Nuevo paquete'}</div>
@@ -723,13 +844,14 @@
 
           ${!selectedClient ? `
             <div class="field">
-              <label>Cliente — buscar por nombre</label>
-              <input class="input" id="pkg-client-search" type="text" placeholder="Escribe el nombre del cliente...">
+              <label>Cliente — buscar por nombre o código</label>
+              <input class="input" id="pkg-client-search" type="text" placeholder="Ej: Jorge o JG-238...">
             </div>
             <div id="pkg-matches"></div>
+            <p class="text-muted" style="margin:-4px 0 var(--space-2);font-size:13px">¿No sabés todavía de quién es? Dejalo así y creá el paquete igual — queda como <strong>Desconocido</strong> y podés identificarlo después.</p>
           ` : `
             <div style="border:1px solid var(--color-divider);padding:var(--space-3);margin-bottom:var(--space-3)">
-              <div style="font-family:var(--font-heading);font-weight:800;font-size:17px;margin-bottom:6px">${esc(selectedClient.name)}</div>
+              <div style="font-family:var(--font-heading);font-weight:800;font-size:17px;margin-bottom:6px">${esc(clientLabel(selectedClient))}</div>
               <p class="card-body" style="margin-bottom:4px">Teléfono: ${esc(selectedClient.phone)}</p>
               <p class="card-body" style="margin-bottom:6px">Dirección: ${selectedClient.address ? `<a href="${esc(selectedClient.address)}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span class="text-muted">Sin dirección</span>'}</p>
               <div style="display:flex;gap:6px">
@@ -741,63 +863,87 @@
           `}
 
           <div style="display:flex;gap:var(--space-2)">
-            <button class="btn btn-primary" type="button" id="pkg-submit" data-action="save-pkg" ${!(draft.tracking.trim() && draft.weight && state.pkgSelectedClientId) ? 'disabled' : ''}>${editing ? 'Guardar cambios' : 'Crear paquete'}</button>
+            <button class="btn btn-primary" type="button" id="pkg-submit" data-action="save-pkg" ${!(draft.tracking.trim() && draft.weight) ? 'disabled' : ''}>${editing ? 'Guardar cambios' : 'Crear paquete'}</button>
             ${editing ? `<button class="btn btn-secondary" type="button" data-action="cancel-pkg-edit">Cancelar</button>` : ''}
           </div>
         </div>
 
+        ${renderInvoiceImportCard()}
+
         <hr class="hr">
-        <h4 style="margin:var(--space-4) 0 var(--space-3)">Identificados — en tránsito (${waitingAll.length})</h4>
-        <div class="field" style="max-width:320px">
-          <label>Buscar por nombre o tracking</label>
-          <input class="input" id="waiting-search" type="text" placeholder="Ej: María o TBA912...">
+        <h4 style="margin:var(--space-4) 0 var(--space-3)">Paquetes pendientes</h4>
+        <p class="text-muted" style="margin-bottom:var(--space-3)">Esperando llegar, o esperando identificar el cliente (Desconocidos).</p>
+        <div class="card elev-sm" style="margin-bottom:var(--space-4)">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-3)">
+            <div class="field">
+              <label>Buscar por código, nombre o tracking</label>
+              <input class="input" id="pkg-list-search" type="text" value="${esc(f.query)}" placeholder="Ej: JG-238, María, TBA912...">
+            </div>
+            <div class="field">
+              <label>Estado</label>
+              <select class="input" id="pkg-list-estado">
+                <option value="">Todos</option>
+                <option value="esperando-llegada" ${f.estado === 'esperando-llegada' ? 'selected' : ''}>Esperando llegada</option>
+                <option value="sin-cliente" ${f.estado === 'sin-cliente' ? 'selected' : ''}>Desconocidos — sin identificar</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-ghost" type="button" data-action="pkg-list-clear" style="margin-top:var(--space-2)">Limpiar filtros</button>
         </div>
-        <div id="waiting-list"></div>
+        <div id="pkg-table"></div>
       </div>`;
   }
 
-  function renderWaitingList() {
-    const container = document.getElementById('waiting-list');
+  function renderPkgList() {
+    const container = document.getElementById('pkg-table');
     if (!container) return;
-    const searchEl = document.getElementById('waiting-search');
-    const wq = normalize(searchEl ? searchEl.value : '').trim();
+    const rows = getPkgListRows();
+    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    const page = Math.min(Math.max(1, state.pkgListPage), totalPages);
+    const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-    const waitingAll = state.packages.filter((p) => p.clientId && !p.arrived)
-      .map((p) => ({ p, c: clientById(p.clientId) }))
-      .sort((a, b) => (a.c ? a.c.name : '').localeCompare(b.c ? b.c.name : '', 'es'));
-
-    const filtered = wq
-      ? waitingAll.filter(({ p, c }) => (c && normalize(c.name).includes(wq)) || normalize(p.tracking).includes(wq))
-      : waitingAll;
-
-    const totalPages = Math.max(1, Math.ceil(filtered.length / WAITING_PAGE_SIZE));
-    const page = Math.min(Math.max(1, state.waitingPage), totalPages);
-    const pageItems = filtered.slice((page - 1) * WAITING_PAGE_SIZE, page * WAITING_PAGE_SIZE);
-
-    const rows = pageItems.map(({ p, c }) => {
-      const mm = c ? messengerForZone(c.province) : null;
+    const tableRows = pageRows.map(({ p, c }) => {
+      const clienteCell = c ? esc(clientLabel(c)) : `<span class="tag tag-warn">Desconocido</span>`;
+      const estadoLabel = !c
+        ? (p.arrived ? 'Desconocido — en bodega' : 'Desconocido — no ha llegado')
+        : 'Esperando llegada';
+      const accion = !c
+        ? `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Identificar cliente →</button>`
+        : `<button class="btn btn-primary" type="button" data-action="arrive-pkg" data-id="${p.id}">Marcar como llegado →</button>`;
       return `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) 0;border-bottom:1px solid var(--color-divider);flex-wrap:wrap;gap:8px">
-          <div>
-            <strong style="font-family:var(--font-heading)">${esc(c ? c.name : 'Cliente eliminado')}</strong>
-            <span class="text-muted" style="margin-left:8px">${esc(p.tracking)} · ${p.weight} lb · $${fmtMoney(p.cost)} · ₡${fmtCRC(p.cost * state.settings.crcRate)}</span>
-            <span class="tag tag-neutral" style="margin-left:8px">${esc(mm ? mm.name : 'Sin mensajero')}</span>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-icon btn-ghost" type="button" data-action="edit-pkg" data-id="${p.id}" aria-label="Editar" title="Editar">${ICONS.edit}</button>
-            <button class="btn btn-primary" type="button" data-action="arrive-pkg" data-id="${p.id}">Marcar como llegado → asignar a mensajero</button>
-          </div>
-        </div>`;
+        <tr>
+          <td>${esc((p.createdAt || '').slice(0, 10) || '—')}</td>
+          <td>${esc(p.tracking)}</td>
+          <td>${clienteCell}</td>
+          <td>${p.weight} lb</td>
+          <td>$${fmtMoney(p.cost)}</td>
+          <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
+          <td><span class="tag tag-neutral">${esc(estadoLabel)}</span></td>
+          <td style="text-align:right;white-space:nowrap">
+            <div style="display:inline-flex;gap:6px;align-items:center">
+              ${accion}
+              <button class="btn btn-icon btn-ghost" type="button" data-action="edit-pkg" data-id="${p.id}" aria-label="Editar" title="Editar">${ICONS.edit}</button>
+            </div>
+          </td>
+        </tr>`;
     }).join('\n');
 
     container.innerHTML = `
-      ${rows}
-      ${filtered.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-2)">No hay paquetes esperando llegada.</p>` : ''}
+      <div style="margin-bottom:var(--space-2)">
+        <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${rows.length}</span><span>pendientes</span></span>
+      </div>
+      <div class="table-scroll">
+        <table class="table" style="min-width:820px">
+          <thead><tr><th>Fecha</th><th>Tracking</th><th>Cliente</th><th>Peso</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+      ${rows.length === 0 ? `<p class="text-muted" style="margin-top:var(--space-2)">No hay paquetes pendientes que coincidan con estos filtros.</p>` : ''}
       ${totalPages > 1 ? `
         <div class="pagination-row">
-          <button class="btn btn-secondary" type="button" data-action="waiting-page" data-dir="prev" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
+          <button class="btn btn-secondary" type="button" data-action="pkg-list-page" data-dir="prev" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
           <span class="text-muted">Página ${page} de ${totalPages}</span>
-          <button class="btn btn-secondary" type="button" data-action="waiting-page" data-dir="next" ${page >= totalPages ? 'disabled' : ''}>Siguiente →</button>
+          <button class="btn btn-secondary" type="button" data-action="pkg-list-page" data-dir="next" ${page >= totalPages ? 'disabled' : ''}>Siguiente →</button>
         </div>` : ''}`;
   }
 
@@ -1082,7 +1228,7 @@
           id: p.id,
           tracking: p.tracking,
           cost: Number(p.cost) || 0,
-          clientName: c ? c.name : 'Cliente eliminado',
+          clientName: c ? clientLabel(c) : 'Cliente eliminado',
           messengerId: mm ? mm.id : null,
           messengerName: mm ? mm.name : 'Sin mensajero',
           sentDate: p.sentDate || '',
@@ -1197,7 +1343,7 @@
   // ── actions ──────────────────────────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
-    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' }; }
+    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' }; }
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '' }; }
     if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; state.messengerError = ''; }
     render();
@@ -1206,6 +1352,7 @@
   async function saveClient() {
     const name = document.getElementById('client-name').value;
     const phone = document.getElementById('client-phone').value;
+    const code = document.getElementById('client-code').value;
     const address = document.getElementById('client-address').value;
     const addressDetails = document.getElementById('client-address-details').value;
     const province = document.getElementById('client-province').value;
@@ -1213,13 +1360,13 @@
     if (!name.trim() || !phone.trim()) return;
     await withBusy(async () => {
       if (state.clientEditingId) {
-        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), code: code.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       } else {
-        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), code: code.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       }
       await reloadClients();
       state.clientEditingId = null;
-      state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
+      state.clientDraft = { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' };
       render();
     });
   }
@@ -1240,7 +1387,7 @@
     const tracking = document.getElementById('pkg-tracking').value;
     const weight = document.getElementById('pkg-weight').value;
     const cost = document.getElementById('pkg-cost').value;
-    if (!tracking.trim() || !weight || !state.pkgSelectedClientId) return;
+    if (!tracking.trim() || !weight) return;
     const finalCost = cost ? parseFloat(cost) : parseFloat(weight) * state.settings.ratePerLb;
     await withBusy(async () => {
       if (state.pkgEditingId) {
@@ -1252,6 +1399,22 @@
       state.pkgEditingId = null;
       state.pkgSelectedClientId = null;
       state.pkgDraft = { tracking: '', weight: '', cost: '' };
+      render();
+    });
+  }
+
+  async function confirmInvoiceImport() {
+    const preview = state.invoiceImportPreview;
+    if (!preview || (!preview.actualizar.length && !preview.nuevo.length)) return;
+    await withBusy(async () => {
+      await LF.db.reconcileInvoice(
+        preview.actualizar.map((r) => ({ id: r.id, weight: r.weight, cost: r.cost })),
+        preview.nuevo.map((r) => ({ tracking: r.tracking, weight: r.weight, cost: r.cost })),
+        todayISO(),
+      );
+      await reloadPackages();
+      state.invoiceImportText = '';
+      state.invoiceImportPreview = null;
       render();
     });
   }
@@ -1394,14 +1557,14 @@
         const c = clientById(el.dataset.id);
         if (!c) return;
         state.clientEditingId = c.id;
-        state.clientDraft = { name: c.name, phone: c.phone, address: c.address, addressDetails: c.addressDetails || '', province: c.province || '', canton: c.canton || '' };
+        state.clientDraft = { name: c.name, phone: c.phone, code: c.code || '', address: c.address, addressDetails: c.addressDetails || '', province: c.province || '', canton: c.canton || '' };
         render();
         scrollToForm('client-form-card');
         return;
       }
       case 'cancel-edit-client':
         state.clientEditingId = null;
-        state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
+        state.clientDraft = { name: '', phone: '', code: '', address: '', addressDetails: '', province: '', canton: '' };
         render(); return;
       case 'save-client': return void saveClient();
       case 'delete-client': return void deleteClient(el.dataset.id);
@@ -1429,10 +1592,29 @@
         return;
       }
       case 'arrive-pkg': return void markArrived(el.dataset.id);
-      case 'waiting-page': {
-        state.waitingPage = el.dataset.dir === 'next' ? state.waitingPage + 1 : Math.max(1, state.waitingPage - 1);
-        renderWaitingList(); return;
+      case 'pkg-list-page': {
+        state.pkgListPage = el.dataset.dir === 'next' ? state.pkgListPage + 1 : Math.max(1, state.pkgListPage - 1);
+        renderPkgList(); return;
       }
+      case 'pkg-list-clear':
+        state.pkgListFilters = { query: '', estado: '' };
+        state.pkgListPage = 1;
+        render();
+        return;
+
+      case 'preview-invoice-import': {
+        const text = (document.getElementById('invoice-import-text') || {}).value || '';
+        state.invoiceImportText = text;
+        state.invoiceImportPreview = buildInvoicePreview(text);
+        render();
+        return;
+      }
+      case 'confirm-invoice-import': return void confirmInvoiceImport();
+      case 'cancel-invoice-import':
+        state.invoiceImportText = '';
+        state.invoiceImportPreview = null;
+        render();
+        return;
 
       case 'unassign-pkg': return void unassignPkg(el.dataset.id);
       case 'mark-route-sent': return void markRouteSent();
@@ -1537,17 +1719,20 @@
       if (box) box.innerHTML = pkgMatchesHtml(e.target.value);
       return;
     }
-    if (id === 'waiting-search') {
-      state.waitingPage = 1;
-      renderWaitingList();
+    if (id === 'pkg-list-search') {
+      state.pkgListFilters.query = e.target.value;
+      state.pkgListPage = 1;
+      renderPkgList();
       return;
     }
+    if (id === 'invoice-import-text') { state.invoiceImportText = e.target.value; return; }
     if (id === 'client-search') {
       state.clientsPage = 1;
       renderClientList();
       return;
     }
     if (id === 'client-name') { state.clientDraft.name = e.target.value; return; }
+    if (id === 'client-code') { state.clientDraft.code = e.target.value; return; }
     if (id === 'client-phone') { state.clientDraft.phone = e.target.value; return; }
     if (id === 'client-address') { state.clientDraft.address = e.target.value; return; }
     if (id === 'client-address-details') { state.clientDraft.addressDetails = e.target.value; return; }
@@ -1601,6 +1786,12 @@
       state.historyFilters.dateTo = e.target.value;
       state.historyPage = 1;
       renderHistoryList();
+      return;
+    }
+    if (e.target.id === 'pkg-list-estado') {
+      state.pkgListFilters.estado = e.target.value;
+      state.pkgListPage = 1;
+      renderPkgList();
       return;
     }
   });
