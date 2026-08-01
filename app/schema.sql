@@ -94,6 +94,13 @@ alter table public.packages add column if not exists routed_date date;
 alter table public.packages add column if not exists delivered boolean not null default false;
 alter table public.packages add column if not exists delivered_date date;
 
+-- Some shipments come by boat, not plane — billed by volume (pies cúbicos),
+-- not weight. shipping_type picks which of weight/cubic_feet applies;
+-- validated in the app layer (always 'aereo' or 'maritimo'), not by a DB
+-- constraint, matching how the rest of this schema doesn't enforce enums.
+alter table public.packages add column if not exists shipping_type text not null default 'aereo';
+alter table public.packages add column if not exists cubic_feet numeric(8,2);
+
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);
 
@@ -108,6 +115,10 @@ create table if not exists public.app_settings (
   updated_at  timestamptz not null default now(),
   constraint app_settings_singleton check (id = 1)
 );
+-- Defaults to 0 rather than a guessed number — there's no way to know the
+-- real rate charged to clients, so the UI warns while this stays unset
+-- instead of silently billing maritime packages at an invented price.
+alter table public.app_settings add column if not exists price_per_cubic_ft numeric(10,2) not null default 0;
 insert into public.app_settings (id) values (1) on conflict (id) do nothing;
 
 -- When a client is deleted, its packages fall back to "sin identificar" instead

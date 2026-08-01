@@ -47,7 +47,7 @@ window.LF = window.LF || {};
   }
 
   function mapSettings(row) {
-    return { ratePerLb: Number(row.rate_per_lb), crcRate: Number(row.crc_rate) };
+    return { ratePerLb: Number(row.rate_per_lb), crcRate: Number(row.crc_rate), pricePerCubicFt: Number(row.price_per_cubic_ft || 0) };
   }
 
   function mapPackage(row) {
@@ -55,6 +55,8 @@ window.LF = window.LF || {};
       id: row.id,
       tracking: row.tracking,
       weight: row.weight == null ? null : Number(row.weight),
+      cubicFeet: row.cubic_feet == null ? null : Number(row.cubic_feet),
+      shippingType: row.shipping_type || 'aereo',
       cost: row.cost == null ? null : Number(row.cost),
       clientId: row.client_id,
       arrived: !!row.arrived,
@@ -127,10 +129,10 @@ window.LF = window.LF || {};
       return (await selectAll('packages')).map(mapPackage);
     },
 
-    async createPackage({ tracking, weight, cost, clientId, arrived, assignedDate }) {
+    async createPackage({ tracking, weight, cubicFeet, shippingType, cost, clientId, arrived, assignedDate }) {
       const { data, error } = await sb().from('packages')
         .insert({
-          tracking, weight, cost,
+          tracking, weight, cubic_feet: cubicFeet, shipping_type: shippingType || 'aereo', cost,
           client_id: clientId, arrived: !!arrived, assigned_date: arrived ? assignedDate : null,
         })
         .select().single();
@@ -138,10 +140,10 @@ window.LF = window.LF || {};
       return mapPackage(data);
     },
 
-    async updatePackage(id, { tracking, weight, cost, clientId, arrived, assignedDate }) {
+    async updatePackage(id, { tracking, weight, cubicFeet, shippingType, cost, clientId, arrived, assignedDate }) {
       const { data, error } = await sb().from('packages')
         .update({
-          tracking, weight, cost,
+          tracking, weight, cubic_feet: cubicFeet, shipping_type: shippingType || 'aereo', cost,
           client_id: clientId, arrived: !!arrived, assigned_date: arrived ? assignedDate : null,
         })
         .eq('id', id).select().single();
@@ -208,13 +210,13 @@ window.LF = window.LF || {};
     async getSettings() {
       const { data, error } = await sb().from('app_settings').select('*').eq('id', 1).maybeSingle();
       throwIfError(error);
-      if (!data) return { ratePerLb: 4.25, crcRate: 525 };
+      if (!data) return { ratePerLb: 4.25, crcRate: 525, pricePerCubicFt: 0 };
       return mapSettings(data);
     },
 
-    async updateSettings({ ratePerLb, crcRate }) {
+    async updateSettings({ ratePerLb, crcRate, pricePerCubicFt }) {
       const { data, error } = await sb().from('app_settings')
-        .update({ rate_per_lb: ratePerLb, crc_rate: crcRate, updated_at: new Date().toISOString() })
+        .update({ rate_per_lb: ratePerLb, crc_rate: crcRate, price_per_cubic_ft: pricePerCubicFt, updated_at: new Date().toISOString() })
         .eq('id', 1).select().single();
       throwIfError(error);
       return mapSettings(data);

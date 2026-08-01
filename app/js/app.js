@@ -69,6 +69,7 @@
 
   const DEFAULT_RATE_PER_LB = 4.25;
   const DEFAULT_CRC_RATE = 525;
+  const DEFAULT_PRICE_PER_CUBIC_FT = 0; // no real rate to default to — Configuración must set this before maritime cost calc means anything
   const PAGE_SIZE = 10;
 
   const state = {
@@ -76,7 +77,7 @@
     clients: [],
     messengers: [],
     packages: [],
-    settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE },
+    settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE, pricePerCubicFt: DEFAULT_PRICE_PER_CUBIC_FT },
     clientsPage: 1,
     clientEditingId: null,
     clientDraft: { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
@@ -85,7 +86,7 @@
     messengerDraft: { name: '', phone: '', origin: '' },
     pkgEditingId: null,
     pkgSelectedClientId: null,
-    pkgDraft: { tracking: '', weight: '', cost: '', arrived: false },
+    pkgDraft: { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' },
     pkgListFilters: { query: '', estado: '' },
     pkgListPage: 1,
     session: null,
@@ -98,9 +99,11 @@
     confirmAction: null,
     invoiceQueue: null,
     invoiceReviewOpen: false,
-    invoiceReviewRows: [],   // [{tracking, weightLb, status, packageId, selected}]
-    invoiceReviewUnparsed: 0,
+    invoiceReviewRows: [],   // [{tracking, shippingType, weightLb, cubicFeet, status, packageId, selected}]
+    invoiceReviewUnparsedLines: [],
     invoiceParsing: false,
+    invoiceParsingStatus: '',
+    invoiceParsingProgress: 0, // 0-1, page/totalPages while reading
     historyFilters: { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
     fatalError: null,
@@ -507,6 +510,11 @@
             <input class="input" id="settings-crc-rate" type="number" step="1" min="0" value="${esc(s.crcRate)}">
             <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se usa para mostrar los costos en colones en las listas y facturas.</p>
           </div>
+          <div class="field">
+            <label>Precio por pie cúbico ($/ft³)</label>
+            <input class="input" id="settings-price-per-cubic-ft" type="number" step="0.01" min="0" value="${esc(s.pricePerCubicFt)}">
+            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se usa para calcular el costo de los paquetes marítimos (por volumen, no por peso).${!s.pricePerCubicFt ? ' <strong style="color:#8a5a00">Todavía está en 0 — configúralo antes de procesar facturas con envíos marítimos.</strong>' : ''}</p>
+          </div>
         </div>
       </div>`;
   }
@@ -749,9 +757,13 @@
 
   // A package can be marked "En Bodega" the moment it physically shows up,
   // even before anyone's filled in who it belongs to or what it weighs —
-  // but it can't be assigned to a mensajero missing that.
+  // but it can't be assigned to a mensajero missing that. What counts as
+  // "the measure" depends on shipping type: aéreo bills by weight (lb),
+  // marítimo by volume (ft³) — a maritime package never has a weight, so
+  // checking p.weight here would leave it permanently "incomplete".
   function pkgInfoComplete(p) {
-    return !!p.clientId && p.weight != null && p.cost != null;
+    const hasMeasure = p.shippingType === 'maritimo' ? p.cubicFeet != null : p.weight != null;
+    return !!p.clientId && hasMeasure && p.cost != null;
   }
 
   function pkgHasMessenger(p) {
@@ -812,7 +824,14 @@
           <div class="card-title" style="margin-bottom:var(--space-2)">Subir factura PDF</div>
           <p class="card-body" style="margin-bottom:var(--space-3)">Sube la factura del casillero y la app compara cada tracking contra tus paquetes — marca como llegados los que ya tenías registrados (con su peso) y deja los que no reconozca como Desconocidos, todo de una vez.</p>
           <input type="file" id="invoice-file-input" accept="application/pdf" style="display:none">
-          <button class="btn btn-primary" type="button" data-action="upload-invoice" ${state.invoiceParsing ? 'disabled' : ''}>${state.invoiceParsing ? 'Analizando factura…' : 'Subir factura PDF'}</button>
+          <button class="btn btn-primary" type="button" data-action="upload-invoice" ${state.invoiceParsing ? 'disabled' : ''}>${state.invoiceParsing ? 'Analizando…' : 'Subir factura PDF'}</button>
+          ${state.invoiceParsing ? `
+            <div style="margin-top:var(--space-2)">
+              <p id="invoice-parsing-label" class="text-muted" style="margin:0 0 4px;font-size:13px">${esc(state.invoiceParsingStatus)}</p>
+              <div style="height:4px;background:var(--color-divider);border-radius:2px;overflow:hidden;max-width:280px">
+                <div id="invoice-parsing-bar" style="height:100%;background:var(--color-accent-600);width:${Math.round(state.invoiceParsingProgress * 100)}%;transition:width .2s"></div>
+              </div>
+            </div>` : ''}
         </div>
 
         <div class="card elev-sm" id="pkg-form-card" style="max-width:900px;margin-bottom:var(--space-8)">
@@ -838,18 +857,43 @@
               </div>
               <p class="text-muted" style="margin:4px 0 0;font-size:13px">Solo cuando ya llegó físicamente.</p>
             </div>
+            <div class="field">
+              <label>Tipo de envío</label>
+              <div style="display:flex;gap:var(--space-4);min-height:36px;align-items:center">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+                  <input type="radio" name="pkg-tipo-envio" id="pkg-tipo-aereo" value="aereo" ${draft.shippingType !== 'maritimo' ? 'checked' : ''} style="width:16px;height:16px;flex:none">
+                  <span>Aéreo (lb)</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px">
+                  <input type="radio" name="pkg-tipo-envio" id="pkg-tipo-maritimo" value="maritimo" ${draft.shippingType === 'maritimo' ? 'checked' : ''} style="width:16px;height:16px;flex:none">
+                  <span>Marítimo (ft³)</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <div style="display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-3)">
-            <div class="field">
-              <label>Peso (libras) — opcional</label>
-              <input class="input" id="pkg-weight" type="number" step="0.1" min="0" value="${esc(draft.weight)}" placeholder="Ej: 3.5">
-            </div>
-            <div class="field">
-              <label>Costo estimado ($${state.settings.ratePerLb}/lb) — editable</label>
-              <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
-              <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
-            </div>
+            ${draft.shippingType === 'maritimo' ? `
+              <div class="field">
+                <label>Pies cúbicos — opcional</label>
+                <input class="input" id="pkg-cubic-feet" type="number" step="0.1" min="0" value="${esc(draft.cubicFeet)}" placeholder="Ej: 4">
+              </div>
+              <div class="field">
+                <label>Costo estimado ($${state.settings.pricePerCubicFt}/ft³) — editable</label>
+                <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+                <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
+              </div>
+            ` : `
+              <div class="field">
+                <label>Peso (libras) — opcional</label>
+                <input class="input" id="pkg-weight" type="number" step="0.1" min="0" value="${esc(draft.weight)}" placeholder="Ej: 3.5">
+              </div>
+              <div class="field">
+                <label>Costo estimado ($${state.settings.ratePerLb}/lb) — editable</label>
+                <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+                <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
+              </div>
+            `}
           </div>
 
           ${!selectedClient ? `
@@ -935,7 +979,9 @@
           <td>${esc(fmtDateCR((p.createdAt || '').slice(0, 10)) || '—')}</td>
           <td>${esc(p.tracking)}</td>
           <td>${clienteCell}</td>
-          <td>${p.weight != null ? p.weight + ' lb' : '<span class="text-muted">—</span>'}</td>
+          <td>${p.shippingType === 'maritimo'
+            ? (p.cubicFeet != null ? p.cubicFeet + ' ft³' : '<span class="text-muted">—</span>')
+            : (p.weight != null ? p.weight + ' lb' : '<span class="text-muted">—</span>')}</td>
           <td>${p.cost != null ? '$' + fmtMoney(p.cost) : '<span class="text-muted">—</span>'}</td>
           <td>${p.cost != null ? '₡' + fmtCRC(p.cost * state.settings.crcRate) : '<span class="text-muted">—</span>'}</td>
           <td><span class="tag tag-neutral">${esc(estadoLabel)}</span></td>
@@ -954,7 +1000,7 @@
       </div>
       <div class="table-scroll">
         <table class="table" style="min-width:820px">
-          <thead><tr><th>Fecha</th><th>Tracking</th><th>Cliente</th><th>Peso</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Tracking</th><th>Cliente</th><th>Peso/Volumen</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
@@ -972,18 +1018,41 @@
   // server, no AI, no cost) and, after a review step the admin can adjust,
   // bulk-applies "marcar como llegado + peso" instead of doing it one
   // tracking at a time.
-  function classifyInvoiceRow({ tracking, weightLb }) {
+  function classifyInvoiceRow({ tracking, shippingType, weightLb, cubicFeet }) {
     const match = state.packages.find((p) => normalize(p.tracking) === normalize(tracking));
-    if (!match) return { tracking, weightLb, status: 'new', packageId: null, selected: true };
-    if (match.arrived) return { tracking, weightLb, status: 'already-arrived', packageId: match.id, selected: false };
-    return { tracking, weightLb, status: 'will-arrive', packageId: match.id, selected: true };
+    const base = { tracking, shippingType, weightLb, cubicFeet };
+    if (!match) return { ...base, status: 'new', packageId: null, selected: true };
+    if (match.arrived) return { ...base, status: 'already-arrived', packageId: match.id, selected: false };
+    return { ...base, status: 'will-arrive', packageId: match.id, selected: true };
+  }
+
+  // Updates the upload button's text/progress bar directly instead of
+  // calling render() on every page — a multi-page invoice would otherwise
+  // re-render the whole "Registrar paquete" screen several times a second
+  // for no visible benefit.
+  function renderInvoiceParsingStatus() {
+    const label = document.getElementById('invoice-parsing-label');
+    const bar = document.getElementById('invoice-parsing-bar');
+    if (label) label.textContent = state.invoiceParsingStatus;
+    if (bar) bar.style.width = Math.round(state.invoiceParsingProgress * 100) + '%';
   }
 
   async function handleInvoiceFile(file) {
     state.invoiceParsing = true;
+    state.invoiceParsingStatus = 'Preparando lector de PDF…';
+    state.invoiceParsingProgress = 0;
     render();
     try {
-      const { rows, unparsedLines } = await LF.invoiceParser.parsePdf(file);
+      const { rows, unparsedLines } = await LF.invoiceParser.parsePdf(file, (p) => {
+        if (p.phase === 'reading') {
+          state.invoiceParsingStatus = `Leyendo página ${p.page} de ${p.totalPages}…`;
+          state.invoiceParsingProgress = p.page / p.totalPages;
+        } else {
+          state.invoiceParsingStatus = 'Preparando lector de PDF…';
+          state.invoiceParsingProgress = 0;
+        }
+        renderInvoiceParsingStatus();
+      });
       state.invoiceParsing = false;
       if (rows.length === 0) {
         render();
@@ -991,7 +1060,7 @@
         return;
       }
       state.invoiceReviewRows = rows.map(classifyInvoiceRow);
-      state.invoiceReviewUnparsed = unparsedLines.length;
+      state.invoiceReviewUnparsedLines = unparsedLines;
       openInvoiceReview();
     } catch (err) {
       state.invoiceParsing = false;
@@ -1009,7 +1078,7 @@
   function closeInvoiceReview() {
     state.invoiceReviewOpen = false;
     state.invoiceReviewRows = [];
-    state.invoiceReviewUnparsed = 0;
+    state.invoiceReviewUnparsedLines = [];
     renderInvoiceReview();
   }
 
@@ -1018,19 +1087,22 @@
     if (selected.length === 0) { closeInvoiceReview(); return; }
     await withBusy(async () => {
       for (const row of selected) {
-        const cost = Math.round(row.weightLb * state.settings.ratePerLb * 100) / 100;
+        const isMaritime = row.shippingType === 'maritimo';
+        const measure = isMaritime ? row.cubicFeet : row.weightLb;
+        const rate = isMaritime ? state.settings.pricePerCubicFt : state.settings.ratePerLb;
+        const cost = Math.round(measure * rate * 100) / 100;
+        const payload = {
+          weight: isMaritime ? null : row.weightLb,
+          cubicFeet: isMaritime ? row.cubicFeet : null,
+          shippingType: row.shippingType,
+          cost, arrived: true, assignedDate: todayISO(),
+        };
         if (row.status === 'will-arrive') {
           const existing = state.packages.find((p) => p.id === row.packageId);
           if (!existing) continue;
-          await LF.db.updatePackage(row.packageId, {
-            tracking: existing.tracking, clientId: existing.clientId,
-            weight: row.weightLb, cost, arrived: true, assignedDate: todayISO(),
-          });
+          await LF.db.updatePackage(row.packageId, { ...payload, tracking: existing.tracking, clientId: existing.clientId });
         } else {
-          await LF.db.createPackage({
-            tracking: row.tracking, clientId: null,
-            weight: row.weightLb, cost, arrived: true, assignedDate: todayISO(),
-          });
+          await LF.db.createPackage({ ...payload, tracking: row.tracking, clientId: null });
         }
       }
       await reloadPackages();
@@ -1050,24 +1122,34 @@
     if (!state.invoiceReviewOpen) { invoiceReviewRoot.innerHTML = ''; return; }
     const rowsHtml = state.invoiceReviewRows.map((r, i) => {
       const s = INVOICE_STATUS_LABEL[r.status];
+      const measure = r.shippingType === 'maritimo' ? `${r.cubicFeet} ft³` : `${r.weightLb} lb`;
       return `
         <tr>
           <td><input type="checkbox" data-action="toggle-invoice-row" data-idx="${i}" ${r.selected ? 'checked' : ''} ${r.status === 'already-arrived' ? 'disabled' : ''}></td>
           <td>${esc(r.tracking)}</td>
-          <td>${r.weightLb} lb</td>
+          <td>${esc(measure)}</td>
           <td><span class="tag ${s.cls}">${s.text}</span></td>
         </tr>`;
     }).join('\n');
     const selectedCount = state.invoiceReviewRows.filter((r) => r.selected && r.status !== 'already-arrived').length;
+    const hasMaritimeRows = state.invoiceReviewRows.some((r) => r.shippingType === 'maritimo');
+    const unparsedLines = state.invoiceReviewUnparsedLines;
 
     invoiceReviewRoot.innerHTML = `
       <div class="dialog-backdrop" style="position:fixed;inset:0;z-index:1000">
         <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="invoice-review-title" style="width:min(720px,100%)">
           <div class="dialog-title" id="invoice-review-title">Revisar factura — ${state.invoiceReviewRows.length} línea(s) encontradas</div>
-          ${state.invoiceReviewUnparsed > 0 ? `<p style="color:#8a5a00;font-size:13px;margin:0 0 var(--space-2)">${state.invoiceReviewUnparsed} línea(s) del PDF no se pudieron leer — revisa la factura a mano para esas.</p>` : ''}
+          ${hasMaritimeRows && !state.settings.pricePerCubicFt ? `<p style="color:#8a5a00;font-size:13px;margin:0 0 var(--space-2)">⚠ El precio por pie cúbico todavía está en 0 (Configuración) — los paquetes marítimos de esta factura se guardarían con costo ₡0.</p>` : ''}
+          ${unparsedLines.length > 0 ? `
+            <details style="margin:0 0 var(--space-2)">
+              <summary style="color:#8a5a00;font-size:13px;cursor:pointer">⚠ ${unparsedLines.length} línea(s) no reconocidas — ver detalle</summary>
+              <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;color:#8a5a00">
+                ${unparsedLines.map((l) => `<li>${esc(l)}</li>`).join('')}
+              </ul>
+            </details>` : ''}
           <div class="table-scroll" style="max-height:50vh;overflow-y:auto">
             <table class="table">
-              <thead><tr><th></th><th>Tracking</th><th>Peso</th><th>Estado</th></tr></thead>
+              <thead><tr><th></th><th>Tracking</th><th>Peso/Volumen</th><th>Estado</th></tr></thead>
               <tbody>${rowsHtml}</tbody>
             </table>
           </div>
@@ -1153,12 +1235,16 @@
       // esta ruta — no una por paquete, así un cliente con 3 paquetes recibe
       // una sola factura combinada en vez de 3 mensajes separados.
       const invoiceMessageForStop = (stop) => {
-        const totalWeight = stop.packages.reduce((sum, p) => sum + (Number(p.weight) || 0), 0);
+        const totalWeight = stop.packages.filter((p) => p.shippingType !== 'maritimo').reduce((sum, p) => sum + (Number(p.weight) || 0), 0);
+        const totalCubicFeet = stop.packages.filter((p) => p.shippingType === 'maritimo').reduce((sum, p) => sum + (Number(p.cubicFeet) || 0), 0);
         const totalCost = stop.packages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
         const trackings = stop.packages.map((p) => p.tracking).join(', ');
         const costCRC = fmtCRC(totalCost * state.settings.crcRate);
         const pkgWord = stop.packages.length === 1 ? 'tu paquete' : 'tus paquetes';
-        return `Hola ${stop.c.name}, aquí el detalle de ${pkgWord}:\n\nPaquetes: ${stop.packages.length}\nTracking: ${trackings}\nPeso total: ${totalWeight} lb\nTotal a pagar: ₡${costCRC} ($${fmtMoney(totalCost)} USD)\n\nGracias por confiar en Logística Flash.`;
+        const measureLines = [];
+        if (totalWeight > 0) measureLines.push(`Peso total: ${totalWeight} lb`);
+        if (totalCubicFeet > 0) measureLines.push(`Volumen total: ${totalCubicFeet} ft³`);
+        return `Hola ${stop.c.name}, aquí el detalle de ${pkgWord}:\n\nPaquetes: ${stop.packages.length}\nTracking: ${trackings}\n${measureLines.join('\n')}\nTotal a pagar: ₡${costCRC} ($${fmtMoney(totalCost)} USD)\n\nGracias por confiar en Logística Flash.`;
       };
       const invoiceHrefForStop = (stop) => `https://wa.me/${waPhone(stop.c.phone)}?text=${encodeURIComponent(invoiceMessageForStop(stop))}`;
       const invoiceHrefsJson = esc(JSON.stringify(orderedStops.filter((stop) => stop.c.phone && stop.c.phone.trim()).map((stop) => invoiceHrefForStop(stop))));
@@ -1467,7 +1553,7 @@
   function setTab(tab) {
     state.tab = tab;
     if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' }; }
-    if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cost: '', arrived: false }; }
+    if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' }; }
     if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; state.messengerError = ''; }
     render();
   }
@@ -1507,27 +1593,33 @@
 
   async function savePkg() {
     const tracking = document.getElementById('pkg-tracking').value;
-    const weight = document.getElementById('pkg-weight').value;
+    const shippingType = state.pkgDraft.shippingType === 'maritimo' ? 'maritimo' : 'aereo';
+    const measureEl = document.getElementById(shippingType === 'maritimo' ? 'pkg-cubic-feet' : 'pkg-weight');
+    const measure = measureEl ? measureEl.value : '';
     const cost = document.getElementById('pkg-cost').value;
     const arrived = document.getElementById('pkg-estado-bodega').checked;
     if (!tracking.trim()) return;
-    const finalWeight = weight ? parseFloat(weight) : null;
-    const finalCost = cost ? parseFloat(cost) : (finalWeight != null ? finalWeight * state.settings.ratePerLb : null);
+    const finalMeasure = measure ? parseFloat(measure) : null;
+    const rate = shippingType === 'maritimo' ? state.settings.pricePerCubicFt : state.settings.ratePerLb;
+    const finalCost = cost ? parseFloat(cost) : (finalMeasure != null ? finalMeasure * rate : null);
+    const finalWeight = shippingType === 'maritimo' ? null : finalMeasure;
+    const finalCubicFeet = shippingType === 'maritimo' ? finalMeasure : null;
     const editing = state.pkgEditingId ? state.packages.find((p) => p.id === state.pkgEditingId) : null;
     // Only stamp a fresh "llegó hoy" date the moment it actually flips to
     // arrived — leaving an already-arrived package's original date alone
     // when it's just being edited for something else (weight, cliente...).
     const assignedDate = arrived ? (editing && editing.arrived ? editing.assignedDate : todayISO()) : null;
     await withBusy(async () => {
+      const payload = { tracking: tracking.trim(), weight: finalWeight, cubicFeet: finalCubicFeet, shippingType, cost: finalCost, clientId: state.pkgSelectedClientId, arrived, assignedDate };
       if (state.pkgEditingId) {
-        await LF.db.updatePackage(state.pkgEditingId, { tracking: tracking.trim(), weight: finalWeight, cost: finalCost, clientId: state.pkgSelectedClientId, arrived, assignedDate });
+        await LF.db.updatePackage(state.pkgEditingId, payload);
       } else {
-        await LF.db.createPackage({ tracking: tracking.trim(), weight: finalWeight, cost: finalCost, clientId: state.pkgSelectedClientId, arrived, assignedDate });
+        await LF.db.createPackage(payload);
       }
       await reloadPackages();
       state.pkgEditingId = null;
       state.pkgSelectedClientId = null;
-      state.pkgDraft = { tracking: '', weight: '', cost: '', arrived: false };
+      state.pkgDraft = { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' };
       render();
     });
   }
@@ -1597,9 +1689,9 @@
     });
   }
 
-  async function saveSettings(ratePerLb, crcRate) {
+  async function saveSettings(ratePerLb, crcRate, pricePerCubicFt) {
     await withBusy(async () => {
-      state.settings = await LF.db.updateSettings({ ratePerLb, crcRate });
+      state.settings = await LF.db.updateSettings({ ratePerLb, crcRate, pricePerCubicFt });
     });
   }
 
@@ -1707,13 +1799,20 @@
       case 'save-pkg': return void savePkg();
       case 'cancel-pkg-edit':
         state.pkgEditingId = null; state.pkgSelectedClientId = null;
-        state.pkgDraft = { tracking: '', weight: '', cost: '', arrived: false };
+        state.pkgDraft = { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' };
         render(); return;
       case 'edit-pkg': {
         const p = state.packages.find((x) => x.id === el.dataset.id);
         if (!p) return;
         state.pkgEditingId = p.id; state.pkgSelectedClientId = p.clientId;
-        state.pkgDraft = { tracking: p.tracking, weight: p.weight == null ? '' : String(p.weight), cost: p.cost == null ? '' : String(p.cost), arrived: p.arrived };
+        state.pkgDraft = {
+          tracking: p.tracking,
+          weight: p.weight == null ? '' : String(p.weight),
+          cubicFeet: p.cubicFeet == null ? '' : String(p.cubicFeet),
+          cost: p.cost == null ? '' : String(p.cost),
+          arrived: p.arrived,
+          shippingType: p.shippingType || 'aereo',
+        };
         render();
         scrollToForm('pkg-form-card');
         return;
@@ -1842,6 +1941,17 @@
       updatePkgSubmitState();
       return;
     }
+    if (id === 'pkg-cubic-feet') {
+      const cf = e.target.value;
+      state.pkgDraft.cubicFeet = cf;
+      const costEl = document.getElementById('pkg-cost');
+      const newCost = cf ? (parseFloat(cf) * state.settings.pricePerCubicFt).toFixed(2) : '';
+      if (costEl) costEl.value = newCost;
+      state.pkgDraft.cost = newCost;
+      updatePkgCostCRC();
+      updatePkgSubmitState();
+      return;
+    }
     if (id === 'pkg-cost') { state.pkgDraft.cost = e.target.value; updatePkgCostCRC(); return; }
     if (id === 'pkg-client-search') {
       const box = document.getElementById('pkg-matches');
@@ -1887,6 +1997,17 @@
       render();
       return;
     }
+    if (e.target.name === 'pkg-tipo-envio') {
+      // Recompute cost from whichever measure now applies (weight vs cubic
+      // feet) instead of leaving a stale value calculated under the other
+      // type's rate — the field itself also swaps on render().
+      state.pkgDraft.shippingType = e.target.value;
+      const measure = e.target.value === 'maritimo' ? state.pkgDraft.cubicFeet : state.pkgDraft.weight;
+      const rate = e.target.value === 'maritimo' ? state.settings.pricePerCubicFt : state.settings.ratePerLb;
+      state.pkgDraft.cost = measure ? (parseFloat(measure) * rate).toFixed(2) : '';
+      render();
+      return;
+    }
     if (e.target.id === 'client-province') {
       // Changing province invalidates whatever canton was picked for the old
       // one, so clear it — a full render() also refreshes the canton
@@ -1896,10 +2017,11 @@
       render();
       return;
     }
-    if (e.target.id === 'settings-rate-per-lb' || e.target.id === 'settings-crc-rate') {
+    if (e.target.id === 'settings-rate-per-lb' || e.target.id === 'settings-crc-rate' || e.target.id === 'settings-price-per-cubic-ft') {
       const ratePerLb = parseFloat(document.getElementById('settings-rate-per-lb').value) || 0;
       const crcRate = parseFloat(document.getElementById('settings-crc-rate').value) || 0;
-      void saveSettings(ratePerLb, crcRate);
+      const pricePerCubicFt = parseFloat(document.getElementById('settings-price-per-cubic-ft').value) || 0;
+      void saveSettings(ratePerLb, crcRate, pricePerCubicFt);
       return;
     }
     if (e.target.id === 'history-messenger') {
