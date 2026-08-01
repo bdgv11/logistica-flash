@@ -97,6 +97,10 @@
     confirmActionLabel: 'Eliminar',
     confirmAction: null,
     invoiceQueue: null,
+    invoiceReviewOpen: false,
+    invoiceReviewRows: [],   // [{tracking, weightLb, status, packageId, selected}]
+    invoiceReviewUnparsed: 0,
+    invoiceParsing: false,
     historyFilters: { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
     fatalError: null,
@@ -322,6 +326,7 @@
   const navRoot = document.getElementById('nav-root');
   const mainRoot = document.getElementById('main-root');
   const confirmRoot = document.getElementById('confirm-root');
+  const invoiceReviewRoot = document.getElementById('invoice-review-root');
 
   function render() {
     if (state.fatalError) {
@@ -802,6 +807,14 @@
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
         <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez — o déjalo sin identificar si todavía no sabés de quién es. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
 
+        <div class="card elev-sm" style="max-width:900px;margin-bottom:var(--space-4)">
+          <div class="card-kicker">Factura del casillero</div>
+          <div class="card-title" style="margin-bottom:var(--space-2)">Subir factura PDF</div>
+          <p class="card-body" style="margin-bottom:var(--space-3)">Sube la factura del casillero y la app compara cada tracking contra tus paquetes — marca como llegados los que ya tenías registrados (con su peso) y deja los que no reconozca como Desconocidos, todo de una vez.</p>
+          <input type="file" id="invoice-file-input" accept="application/pdf" style="display:none">
+          <button class="btn btn-primary" type="button" data-action="upload-invoice" ${state.invoiceParsing ? 'disabled' : ''}>${state.invoiceParsing ? 'Analizando factura…' : 'Subir factura PDF'}</button>
+        </div>
+
         <div class="card elev-sm" id="pkg-form-card" style="max-width:900px;margin-bottom:var(--space-8)">
           <div class="card-kicker">${editing ? 'Editar paquete' : 'Nuevo paquete'}</div>
           <div class="card-title" style="margin-bottom:var(--space-2)">Datos del paquete y cliente</div>
@@ -952,6 +965,118 @@
           <span class="text-muted">Página ${page} de ${totalPages}</span>
           <button class="btn btn-secondary" type="button" data-action="pkg-list-page" data-dir="next" ${page >= totalPages ? 'disabled' : ''}>Siguiente →</button>
         </div>` : ''}`;
+  }
+
+  // ── FACTURA DEL CASILLERO (PDF) ──────────────────────────────────────────
+  // Reads the invoice PDF client-side (js/invoiceParser.js, pdf.js — no
+  // server, no AI, no cost) and, after a review step the admin can adjust,
+  // bulk-applies "marcar como llegado + peso" instead of doing it one
+  // tracking at a time.
+  function classifyInvoiceRow({ tracking, weightLb }) {
+    const match = state.packages.find((p) => normalize(p.tracking) === normalize(tracking));
+    if (!match) return { tracking, weightLb, status: 'new', packageId: null, selected: true };
+    if (match.arrived) return { tracking, weightLb, status: 'already-arrived', packageId: match.id, selected: false };
+    return { tracking, weightLb, status: 'will-arrive', packageId: match.id, selected: true };
+  }
+
+  async function handleInvoiceFile(file) {
+    state.invoiceParsing = true;
+    render();
+    try {
+      const { rows, unparsedLines } = await LF.invoiceParser.parsePdf(file);
+      state.invoiceParsing = false;
+      if (rows.length === 0) {
+        render();
+        window.alert('No se encontraron líneas reconocibles en este PDF. ¿Es una factura del casillero, y trae texto (no una imagen escaneada)?');
+        return;
+      }
+      state.invoiceReviewRows = rows.map(classifyInvoiceRow);
+      state.invoiceReviewUnparsed = unparsedLines.length;
+      openInvoiceReview();
+    } catch (err) {
+      state.invoiceParsing = false;
+      render();
+      console.error(err);
+      window.alert('No se pudo leer este PDF. Puede que esté dañado, protegido, o que sea una imagen escaneada sin texto. (' + (err && err.message ? err.message : 'error desconocido') + ')');
+    }
+  }
+
+  function openInvoiceReview() {
+    state.invoiceReviewOpen = true;
+    renderInvoiceReview();
+  }
+
+  function closeInvoiceReview() {
+    state.invoiceReviewOpen = false;
+    state.invoiceReviewRows = [];
+    state.invoiceReviewUnparsed = 0;
+    renderInvoiceReview();
+  }
+
+  async function commitInvoiceReview() {
+    const selected = state.invoiceReviewRows.filter((r) => r.selected && r.status !== 'already-arrived');
+    if (selected.length === 0) { closeInvoiceReview(); return; }
+    await withBusy(async () => {
+      for (const row of selected) {
+        const cost = Math.round(row.weightLb * state.settings.ratePerLb * 100) / 100;
+        if (row.status === 'will-arrive') {
+          const existing = state.packages.find((p) => p.id === row.packageId);
+          if (!existing) continue;
+          await LF.db.updatePackage(row.packageId, {
+            tracking: existing.tracking, clientId: existing.clientId,
+            weight: row.weightLb, cost, arrived: true, assignedDate: todayISO(),
+          });
+        } else {
+          await LF.db.createPackage({
+            tracking: row.tracking, clientId: null,
+            weight: row.weightLb, cost, arrived: true, assignedDate: todayISO(),
+          });
+        }
+      }
+      await reloadPackages();
+      closeInvoiceReview();
+      render();
+    });
+  }
+
+  const INVOICE_STATUS_LABEL = {
+    'will-arrive': { text: 'Se marcará como llegado', cls: 'tag-accent' },
+    'already-arrived': { text: 'Ya estaba en bodega — se omite', cls: 'tag-neutral' },
+    'new': { text: 'Nuevo — se creará como Desconocido', cls: 'tag-warn' },
+  };
+
+  function renderInvoiceReview() {
+    if (!invoiceReviewRoot) return;
+    if (!state.invoiceReviewOpen) { invoiceReviewRoot.innerHTML = ''; return; }
+    const rowsHtml = state.invoiceReviewRows.map((r, i) => {
+      const s = INVOICE_STATUS_LABEL[r.status];
+      return `
+        <tr>
+          <td><input type="checkbox" data-action="toggle-invoice-row" data-idx="${i}" ${r.selected ? 'checked' : ''} ${r.status === 'already-arrived' ? 'disabled' : ''}></td>
+          <td>${esc(r.tracking)}</td>
+          <td>${r.weightLb} lb</td>
+          <td><span class="tag ${s.cls}">${s.text}</span></td>
+        </tr>`;
+    }).join('\n');
+    const selectedCount = state.invoiceReviewRows.filter((r) => r.selected && r.status !== 'already-arrived').length;
+
+    invoiceReviewRoot.innerHTML = `
+      <div class="dialog-backdrop" style="position:fixed;inset:0;z-index:1000">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="invoice-review-title" style="width:min(720px,100%)">
+          <div class="dialog-title" id="invoice-review-title">Revisar factura — ${state.invoiceReviewRows.length} línea(s) encontradas</div>
+          ${state.invoiceReviewUnparsed > 0 ? `<p style="color:#8a5a00;font-size:13px;margin:0 0 var(--space-2)">${state.invoiceReviewUnparsed} línea(s) del PDF no se pudieron leer — revisa la factura a mano para esas.</p>` : ''}
+          <div class="table-scroll" style="max-height:50vh;overflow-y:auto">
+            <table class="table">
+              <thead><tr><th></th><th>Tracking</th><th>Peso</th><th>Estado</th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+          <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" data-action="cancel-invoice-review">Cancelar</button>
+            <button type="button" class="btn btn-primary" data-action="confirm-invoice-review" ${selectedCount === 0 ? 'disabled' : ''}>Confirmar y procesar (${selectedCount})</button>
+          </div>
+        </div>
+      </div>`;
   }
 
   // ── LISTA DEL DIA ────────────────────────────────────────────────────────
@@ -1594,6 +1719,21 @@
         return;
       }
       case 'arrive-pkg': return void markArrived(el.dataset.id);
+
+      case 'upload-invoice': {
+        const input = document.getElementById('invoice-file-input');
+        if (input) input.click();
+        return;
+      }
+      case 'toggle-invoice-row': {
+        const row = state.invoiceReviewRows[Number(el.dataset.idx)];
+        if (row) row.selected = !row.selected;
+        renderInvoiceReview();
+        return;
+      }
+      case 'cancel-invoice-review': return closeInvoiceReview();
+      case 'confirm-invoice-review': return void commitInvoiceReview();
+
       case 'pkg-list-page': {
         state.pkgListPage = el.dataset.dir === 'next' ? state.pkgListPage + 1 : Math.max(1, state.pkgListPage - 1);
         renderPkgList(); return;
@@ -1784,6 +1924,12 @@
       state.pkgListFilters.estado = e.target.value;
       state.pkgListPage = 1;
       renderPkgList();
+      return;
+    }
+    if (e.target.id === 'invoice-file-input') {
+      const file = e.target.files[0];
+      e.target.value = ''; // allow re-selecting the same file after cancelling
+      if (file) void handleInvoiceFile(file);
       return;
     }
   });
