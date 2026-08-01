@@ -102,7 +102,6 @@
     invoiceReviewRows: [],   // [{tracking, shippingType, weightLb, cubicFeet, status, packageId, selected}]
     invoiceReviewUnparsedLines: [],
     invoiceParsing: false,
-    invoiceParsingStatus: '',
     invoiceParsingProgress: 0, // 0-1, page/totalPages while reading
     historyFilters: { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
@@ -330,6 +329,7 @@
   const mainRoot = document.getElementById('main-root');
   const confirmRoot = document.getElementById('confirm-root');
   const invoiceReviewRoot = document.getElementById('invoice-review-root');
+  const invoiceParsingRoot = document.getElementById('invoice-parsing-root');
 
   function render() {
     if (state.fatalError) {
@@ -825,13 +825,6 @@
           <p class="card-body" style="margin-bottom:var(--space-3)">Sube la factura del casillero y la app compara cada tracking contra tus paquetes — marca como llegados los que ya tenías registrados (con su peso) y deja los que no reconozca como Desconocidos, todo de una vez.</p>
           <input type="file" id="invoice-file-input" accept="application/pdf" style="display:none">
           <button class="btn btn-primary" type="button" data-action="upload-invoice" ${state.invoiceParsing ? 'disabled' : ''}>${state.invoiceParsing ? 'Analizando…' : 'Subir factura PDF'}</button>
-          ${state.invoiceParsing ? `
-            <div style="margin-top:var(--space-2)">
-              <p id="invoice-parsing-label" class="text-muted" style="margin:0 0 4px;font-size:13px">${esc(state.invoiceParsingStatus)}</p>
-              <div style="height:4px;background:var(--color-divider);border-radius:2px;overflow:hidden;max-width:280px">
-                <div id="invoice-parsing-bar" style="height:100%;background:var(--color-accent-600);width:${Math.round(state.invoiceParsingProgress * 100)}%;transition:width .2s"></div>
-              </div>
-            </div>` : ''}
         </div>
 
         <div class="card elev-sm" id="pkg-form-card" style="max-width:900px;margin-bottom:var(--space-8)">
@@ -855,7 +848,6 @@
                   <span>En Bodega</span>
                 </label>
               </div>
-              <p class="text-muted" style="margin:4px 0 0;font-size:13px">Solo cuando ya llegó físicamente.</p>
             </div>
             <div class="field">
               <label>Tipo de envío</label>
@@ -1026,36 +1018,55 @@
     return { ...base, status: 'will-arrive', packageId: match.id, selected: true };
   }
 
-  // Updates the upload button's text/progress bar directly instead of
-  // calling render() on every page — a multi-page invoice would otherwise
-  // re-render the whole "Registrar paquete" screen several times a second
-  // for no visible benefit.
-  function renderInvoiceParsingStatus() {
-    const label = document.getElementById('invoice-parsing-label');
+  // Its own modal, mounted/unmounted directly off state.invoiceParsing
+  // (same pattern as the confirm dialog) rather than a progress bar drawn
+  // inside the "Registrar paquete" card. That distinction matters: the
+  // in-card version used to keep showing its last frozen state (stuck at
+  // "leyendo página X de Y") after parsing finished, because nothing forced
+  // that part of the page to redraw once the review dialog opened over it —
+  // it was still there, just hidden behind the dialog, and reappeared the
+  // moment "Cancelar" closed it. A dedicated modal that's fully torn down
+  // the instant invoiceParsing flips false can't get stuck like that.
+  function renderInvoiceParsingModal() {
+    if (!invoiceParsingRoot) return;
+    if (!state.invoiceParsing) { invoiceParsingRoot.innerHTML = ''; return; }
+    invoiceParsingRoot.innerHTML = `
+      <div class="dialog-backdrop" style="position:fixed;inset:0;z-index:1000">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="invoice-parsing-title" style="width:min(360px,100%)">
+          <div class="dialog-title" id="invoice-parsing-title">Analizando factura…</div>
+          <div style="height:6px;background:var(--color-divider);border-radius:3px;overflow:hidden;margin-top:var(--space-2)">
+            <div id="invoice-parsing-bar" style="height:100%;background:var(--color-accent-600);width:0%;transition:width .2s"></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Direct DOM update on every page read (not renderInvoiceParsingModal(),
+  // which would tear down and recreate the bar element each time and so
+  // never actually animate the width transition).
+  function updateInvoiceParsingProgress() {
     const bar = document.getElementById('invoice-parsing-bar');
-    if (label) label.textContent = state.invoiceParsingStatus;
     if (bar) bar.style.width = Math.round(state.invoiceParsingProgress * 100) + '%';
   }
 
   async function handleInvoiceFile(file) {
     state.invoiceParsing = true;
-    state.invoiceParsingStatus = 'Preparando lector de PDF…';
     state.invoiceParsingProgress = 0;
     render();
+    renderInvoiceParsingModal();
     try {
       const { rows, unparsedLines } = await LF.invoiceParser.parsePdf(file, (p) => {
-        if (p.phase === 'reading') {
-          state.invoiceParsingStatus = `Leyendo página ${p.page} de ${p.totalPages}…`;
-          state.invoiceParsingProgress = p.page / p.totalPages;
-        } else {
-          state.invoiceParsingStatus = 'Preparando lector de PDF…';
-          state.invoiceParsingProgress = 0;
-        }
-        renderInvoiceParsingStatus();
+        state.invoiceParsingProgress = p.phase === 'reading' ? p.page / p.totalPages : 0;
+        updateInvoiceParsingProgress();
       });
+      // Always reset back to normal the instant parsing ends, before
+      // branching into "show review" / "show alert" / whatever comes next
+      // — otherwise a stale disabled button or a stuck modal can linger
+      // behind that next screen (see comment on renderInvoiceParsingModal).
       state.invoiceParsing = false;
+      render();
+      renderInvoiceParsingModal();
       if (rows.length === 0) {
-        render();
         window.alert('No se encontraron líneas reconocibles en este PDF. ¿Es una factura del casillero, y trae texto (no una imagen escaneada)?');
         return;
       }
@@ -1065,6 +1076,7 @@
     } catch (err) {
       state.invoiceParsing = false;
       render();
+      renderInvoiceParsingModal();
       console.error(err);
       window.alert('No se pudo leer este PDF. Puede que esté dañado, protegido, o que sea una imagen escaneada sin texto. (' + (err && err.message ? err.message : 'error desconocido') + ')');
     }
@@ -1692,6 +1704,29 @@
   async function saveSettings(ratePerLb, crcRate, pricePerCubicFt) {
     await withBusy(async () => {
       state.settings = await LF.db.updateSettings({ ratePerLb, crcRate, pricePerCubicFt });
+      // cost is a stored estimate, not something recalculated live from the
+      // rate everywhere it's shown — so without this, a rate change here
+      // would silently stop matching what a not-yet-paid package actually
+      // displays until someone happens to re-save that package by hand.
+      // Once a package is paid (sent), its cost is a locked-in historical
+      // record instead and is left alone.
+      const affected = state.packages.filter((p) => {
+        if (p.sent) return false;
+        const measure = p.shippingType === 'maritimo' ? p.cubicFeet : p.weight;
+        return measure != null;
+      });
+      for (const p of affected) {
+        const rate = p.shippingType === 'maritimo' ? state.settings.pricePerCubicFt : state.settings.ratePerLb;
+        const measure = p.shippingType === 'maritimo' ? p.cubicFeet : p.weight;
+        const newCost = Math.round(measure * rate * 100) / 100;
+        if (newCost === p.cost) continue;
+        await LF.db.updatePackage(p.id, {
+          tracking: p.tracking, weight: p.weight, cubicFeet: p.cubicFeet, shippingType: p.shippingType,
+          cost: newCost, clientId: p.clientId, arrived: p.arrived, assignedDate: p.assignedDate,
+        });
+      }
+      if (affected.length > 0) await reloadPackages();
+      render();
     });
   }
 
