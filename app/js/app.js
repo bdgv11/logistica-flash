@@ -103,6 +103,7 @@
     invoiceReviewUnparsedLines: [],
     invoiceParsing: false,
     invoiceParsingProgress: 0, // 0-1, page/totalPages while reading
+    routeOptimization: {}, // messengerId -> {status: 'loading'|'done'|'error', orderedStops}
     historyFilters: { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
     fatalError: null,
@@ -295,7 +296,13 @@
 
   async function reloadClients() { state.clients = await LF.db.listClients(); }
   async function reloadMessengers() { state.messengers = await LF.db.listMessengers(); }
-  async function reloadPackages() { state.packages = await LF.db.listPackages(); }
+  async function reloadPackages() {
+    state.packages = await LF.db.listPackages();
+    // Any change to the package list invalidates a previously-optimized
+    // order — its indices were computed against a stop list that no longer
+    // matches (assigned/unassigned/delivered since).
+    state.routeOptimization = {};
+  }
   async function reloadSettings() { state.settings = await LF.db.getSettings(); }
   async function reloadAll() {
     const [clients, messengers, packages, settings] = await Promise.all([
@@ -1197,6 +1204,64 @@
     return [...byZone.entries()].filter(([, names]) => names.length > 1);
   }
 
+  // Today's active-route packages for this mensajero, grouped by client so
+  // one client with several packages gets a single stop listing every
+  // tracking, instead of repeating their name/address/phone per package.
+  // Shared by renderLista() (default straight-line order) and
+  // optimizeRoute() (needs the same unordered stop list to send to Google).
+  function stopsForMessenger(m) {
+    const entries = activeRoutePackages()
+      .map((p) => ({ p, c: clientById(p.clientId) }))
+      .filter(({ c }) => c && c.province && m.zones.includes(c.province));
+    const stopsByClient = new Map();
+    const stops = [];
+    entries.forEach(({ p, c }) => {
+      let stop = stopsByClient.get(c.id);
+      if (!stop) { stop = { c, packages: [] }; stopsByClient.set(c.id, stop); stops.push(stop); }
+      stop.packages.push(p);
+    });
+    return stops;
+  }
+
+  // Calls the optional Supabase Edge Function (supabase/functions/optimize-route)
+  // to reorder this mensajero's stops using real streets (Google Routes API)
+  // instead of the straight-line default. That default keeps working as the
+  // fallback if this isn't deployed yet, or the call fails for any reason —
+  // this never blocks or breaks Lista del día.
+  async function optimizeRoute(messengerId) {
+    const m = state.messengers.find((x) => x.id === messengerId);
+    if (!m) return;
+    const stops = stopsForMessenger(m);
+    if (stops.length === 0) return;
+    const originCoord = extractLatLng(m.origin);
+    if (!originCoord) {
+      window.alert('No se pudo leer la ubicación de salida de este mensajero — revisa el link en "Mensajeros".');
+      return;
+    }
+    const withCoords = stops.map((stop) => ({ stop, coord: clientCoord(stop.c) }));
+    const missing = withCoords.filter((x) => !x.coord);
+    if (missing.length > 0) {
+      window.alert('No se pudo optimizar: estos clientes no tienen una ubicación reconocible — ' + missing.map((x) => x.stop.c.name).join(', '));
+      return;
+    }
+    state.routeOptimization[messengerId] = { status: 'loading' };
+    render();
+    try {
+      const { data, error } = await LF.supabase.functions.invoke('optimize-route', {
+        body: { origin: originCoord, stops: withCoords.map((x) => x.coord) },
+      });
+      if (error) throw error;
+      const order = data && data.order;
+      if (!Array.isArray(order) || order.length !== withCoords.length) throw new Error('Respuesta inválida del servicio de rutas.');
+      state.routeOptimization[messengerId] = { status: 'done', orderedStops: order.map((i) => withCoords[i].stop) };
+    } catch (err) {
+      console.error(err);
+      state.routeOptimization[messengerId] = { status: 'error' };
+      window.alert('No se pudo optimizar la ruta: ' + (err && err.message ? err.message : 'error desconocido'));
+    }
+    render();
+  }
+
   function renderLista() {
     const dupZones = duplicatedZones();
     const cards = state.messengers.map((m) => {
@@ -1208,23 +1273,15 @@
       const totalCostCRC = totalCost * state.settings.crcRate;
       const zoneLabel = m.zones.join(', ') || 'Sin zona asignada';
 
-      // Group by client so a client with several packages today gets one
-      // stop listing all their tracking IDs, instead of repeating their
-      // name/address/phone once per package.
-      const stopsByClient = new Map();
-      const stops = [];
-      entries.forEach(({ p, c }) => {
-        let stop = stopsByClient.get(c.id);
-        if (!stop) { stop = { c, packages: [] }; stopsByClient.set(c.id, stop); stops.push(stop); }
-        stop.packages.push(p);
-      });
+      const stops = stopsForMessenger(m);
 
       // Order stops by straight-line distance from the messenger's starting
       // point (extracted from their "punto de salida" link) — a coarse
       // route approximation, not real street routing. If the origin link
       // has no readable coordinates, stops stay in their original order.
       const originCoord = extractLatLng(m.origin);
-      const orderedStops = orderStopsByRoute(stops, originCoord);
+      const routeOpt = state.routeOptimization[m.id];
+      const orderedStops = routeOpt && routeOpt.status === 'done' ? routeOpt.orderedStops : orderStopsByRoute(stops, originCoord);
 
       // The "ruta de hoy" message is only about what's still coming — once
       // something's delivered, resending it in that list makes no sense.
@@ -1300,7 +1357,13 @@
               <div class="card-kicker">${esc(zoneLabel)}</div>
               <div class="card-title">${esc(m.name)}</div>
             </div>
-            <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${entries.length}</span><span>en esta ruta</span></span>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              ${routeOpt && routeOpt.status === 'done' ? `<span class="tag tag-accent">Ruta optimizada ✓</span>` : ''}
+              <button class="btn btn-secondary" type="button" data-action="optimize-route" data-id="${m.id}" ${entries.length === 0 || (routeOpt && routeOpt.status === 'loading') ? 'disabled' : ''}>
+                ${routeOpt && routeOpt.status === 'loading' ? 'Optimizando…' : 'Optimizar ruta con Google Maps'}
+              </button>
+              <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${entries.length}</span><span>en esta ruta</span></span>
+            </div>
           </div>
           <div class="table-scroll">
             <table class="table" style="margin-top:var(--space-2);min-width:760px">
@@ -1880,6 +1943,7 @@
 
       case 'assign-route': return void assignRoute(el.dataset.id);
       case 'unassign-route': return void unassignRoute(el.dataset.id);
+      case 'optimize-route': return void optimizeRoute(el.dataset.id);
       case 'deliver-pkg': return void deliverPkg(el.dataset.id, el.dataset.paid === '1');
       case 'mark-paid': return void markPaid(el.dataset.id);
 
