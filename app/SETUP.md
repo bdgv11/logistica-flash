@@ -113,6 +113,31 @@ llame tenga sesión iniciada):
 supabase secrets set ALLOWED_ORIGIN=https://tu-dominio.com
 ```
 
+## 8. (Opcional) Resolver links cortos de Google Maps / Waze automáticamente
+
+Cuando alguien comparte una ubicación desde el celular (botón "Compartir" en
+Google Maps o Waze), por defecto se genera un link **cortito**
+(`maps.app.goo.gl/xxx`, `waze.com/ul/xxx`) que no trae ninguna coordenada en
+el texto — solo un código que redirige a otro lado. La app lee las
+coordenadas directo del texto del link (sin conexión a internet), así que
+con un link corto no encuentra nada y ese cliente o mensajero queda sin
+ubicación reconocible para ordenar rutas.
+
+Este paso agrega una función que seguí ese link una sola vez, al guardar el
+cliente o mensajero, y guarda el link largo (con coordenadas) en su lugar —
+así da igual qué tipo de link peguen. A diferencia del paso 7, **no necesita
+cuenta de Google Cloud ni API key**: solo sigue un redirect público.
+
+Desde la carpeta `app/` (con el Supabase CLI ya logueado y enlazado, ver
+paso 7):
+```bash
+supabase functions deploy resolve-map-link
+```
+
+Si no lo hacen, todo sigue funcionando igual que hoy: hay que pegar el link
+"largo" (el que se ve en la barra de direcciones del navegador, con
+`@lat,lng` o `!3d!4d`) en vez del cortito que da el botón "Compartir".
+
 ## Notas de diseño / decisiones tomadas
 
 - **Multi-dispositivo real**: ambas administradoras ven los mismos clientes,
@@ -123,11 +148,12 @@ supabase secrets set ALLOWED_ORIGIN=https://tu-dominio.com
 - **Casi sin funciones "serverless" propias**: toda la lógica de negocio
   (cálculo de costo, armado del mensaje de WhatsApp, mensajero según zona,
   etc.) vive en `js/app.js` y llama directo a Supabase — no hay servidor
-  intermedio que mantener. La única excepción es
-  `supabase/functions/optimize-route` (paso 7, opcional): la API key de
-  Google no puede vivir en el navegador, así que esa única llamada pasa por
-  una Edge Function que solo la sostiene y reenvía la respuesta — nada de
-  lógica de negocio ahí tampoco.
+  intermedio que mantener. Las únicas dos excepciones, ambas opcionales:
+  `supabase/functions/optimize-route` (paso 7) porque la API key de Google
+  no puede vivir en el navegador, y `supabase/functions/resolve-map-link`
+  (paso 8) porque seguir un redirect de otro sitio (Google/Waze) desde el
+  navegador choca con CORS — en ambos casos la función solo hace esa tarea
+  puntual y devuelve el resultado, nada de lógica de negocio ahí tampoco.
 
 ## Algo que vale la pena revisar con el equipo
 

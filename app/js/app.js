@@ -308,6 +308,29 @@
     return ordered.concat(withoutCoord);
   }
 
+  // Shortened Google Maps / Waze share links (maps.app.goo.gl/xxx,
+  // waze.com/ul/xxx — the default a phone's "Share location" button
+  // produces) carry no coordinates in their own text, only an opaque code;
+  // extractLatLng() can't read those no matter what, since it only ever
+  // looks at the text of the link, never fetches anything. This asks the
+  // optional resolve-map-link Edge Function to follow the redirect once, so
+  // what actually gets saved is the long link with real coordinates — after
+  // that, extractLatLng() reads it directly, same as any pasted long link.
+  // Never blocks saving: if this isn't deployed yet, times out, or fails
+  // for any reason, whatever was typed is kept as-is (today's behavior) —
+  // this is a nice-to-have, not a requirement to use the app.
+  async function resolveMapLinkIfNeeded(value) {
+    const trimmed = (value || '').trim();
+    if (!trimmed || !/^https?:\/\//i.test(trimmed) || extractLatLng(trimmed)) return trimmed;
+    try {
+      const { data, error } = await LF.supabase.functions.invoke('resolve-map-link', { body: { url: trimmed } });
+      if (error || !data || !data.resolvedUrl) return trimmed;
+      return data.resolvedUrl;
+    } catch {
+      return trimmed;
+    }
+  }
+
   function scrollToForm(id) {
     setTimeout(() => {
       const node = document.getElementById(id);
@@ -1870,10 +1893,11 @@
     const canton = document.getElementById('client-canton').value;
     if (!name.trim() || !phone.trim()) return;
     await withBusy(async () => {
+      const resolvedAddress = await resolveMapLinkIfNeeded(address);
       if (state.clientEditingId) {
-        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), phone2: phone2.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), phone2: phone2.trim(), address: resolvedAddress, addressDetails: addressDetails.trim(), province, canton });
       } else {
-        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), phone2: phone2.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), phone2: phone2.trim(), address: resolvedAddress, addressDetails: addressDetails.trim(), province, canton });
       }
       await reloadClients();
       state.clientEditingId = null;
@@ -2080,10 +2104,11 @@
     state.messengerError = '';
 
     await withBusy(async () => {
+      const resolvedOrigin = await resolveMapLinkIfNeeded(origin);
       if (state.messengerEditingId) {
-        await LF.db.updateMessenger(state.messengerEditingId, { name: name.trim(), phone: phone.trim(), origin: origin.trim(), zones });
+        await LF.db.updateMessenger(state.messengerEditingId, { name: name.trim(), phone: phone.trim(), origin: resolvedOrigin, zones });
       } else {
-        await LF.db.createMessenger({ name: name.trim(), phone: phone.trim(), origin: origin.trim(), zones });
+        await LF.db.createMessenger({ name: name.trim(), phone: phone.trim(), origin: resolvedOrigin, zones });
       }
       await reloadMessengers();
       state.messengerEditingId = null;
