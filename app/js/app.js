@@ -123,6 +123,24 @@
     return String(v == null ? '' : v).toLowerCase().normalize('NFD').replace(DIACRITICS_RE, '');
   }
 
+  // FedEx/UPS and some other carriers hand a client a short reference
+  // number that's actually just the tail end of the real, longer tracking
+  // that ends up on the casillero's invoice (e.g. a client-provided
+  // "533740261028" turning out to be the last 12 digits of the invoice's
+  // "9621091390001093331700533740261028"). Whichever one is shorter must be
+  // an exact suffix of the other — not just "share some digits somewhere"
+  // — and both need a minimum length, or short/generic codes (like the
+  // "657969"-style internal casillero references also seen in real
+  // invoices) would spuriously match unrelated trackings by coincidence.
+  const PARTIAL_TRACKING_MIN_LEN = 10;
+  function isPartialTrackingMatch(a, b) {
+    const na = normalize(a).replace(/\s+/g, '');
+    const nb = normalize(b).replace(/\s+/g, '');
+    if (!na || !nb || na === nb) return false;
+    if (na.length < PARTIAL_TRACKING_MIN_LEN || nb.length < PARTIAL_TRACKING_MIN_LEN) return false;
+    return na.endsWith(nb) || nb.endsWith(na);
+  }
+
   // toISOString() converts to UTC first — for anyone west of UTC (like
   // Costa Rica, UTC-6) that silently rolls "today" over to tomorrow for
   // several hours every evening. Build the date from local getters instead
@@ -1018,11 +1036,20 @@
   // bulk-applies "marcar como llegado + peso" instead of doing it one
   // tracking at a time.
   function classifyInvoiceRow({ tracking, shippingType, weightLb, cubicFeet }) {
-    const match = state.packages.find((p) => normalize(p.tracking) === normalize(tracking));
     const base = { tracking, shippingType, weightLb, cubicFeet };
-    if (!match) return { ...base, status: 'new', packageId: null, selected: true };
-    if (match.arrived) return { ...base, status: 'already-arrived', packageId: match.id, selected: false };
-    return { ...base, status: 'will-arrive', packageId: match.id, selected: true };
+    const exact = state.packages.find((p) => normalize(p.tracking) === normalize(tracking));
+    if (exact) {
+      if (exact.arrived) return { ...base, status: 'already-arrived', packageId: exact.id, selected: false };
+      return { ...base, status: 'will-arrive', packageId: exact.id, selected: true };
+    }
+    // No exact match — check for the FedEx/UPS short-reference case before
+    // giving up and treating this as a brand new package.
+    const partial = state.packages.find((p) => isPartialTrackingMatch(p.tracking, tracking));
+    if (partial) {
+      if (partial.arrived) return { ...base, status: 'already-arrived', packageId: partial.id, selected: false };
+      return { ...base, status: 'partial-match', packageId: partial.id, matchedTracking: partial.tracking, selected: true };
+    }
+    return { ...base, status: 'new', packageId: null, selected: true };
   }
 
   // Its own modal, mounted/unmounted directly off state.invoiceParsing
@@ -1120,6 +1147,14 @@
           const existing = state.packages.find((p) => p.id === row.packageId);
           if (!existing) continue;
           await LF.db.updatePackage(row.packageId, { ...payload, tracking: existing.tracking, clientId: existing.clientId });
+        } else if (row.status === 'partial-match') {
+          const existing = state.packages.find((p) => p.id === row.packageId);
+          if (!existing) continue;
+          // Replace the short reference Nana originally typed with the full
+          // tracking from the invoice — the next invoice that mentions this
+          // package will then match it exactly instead of needing this
+          // fallback again.
+          await LF.db.updatePackage(row.packageId, { ...payload, tracking: row.tracking, clientId: existing.clientId });
         } else {
           await LF.db.createPackage({ ...payload, tracking: row.tracking, clientId: null });
         }
@@ -1130,10 +1165,15 @@
     });
   }
 
+  // 'partial-match' has no dedicated .tag-* class — .tag-accent-2 exists in
+  // CSS but is literally the same navy as .tag-accent (unused/undifferentiated
+  // color slot), so it wouldn't actually stand out. Styled inline instead,
+  // same as the existing "Entregado — Debe" tag elsewhere in this file.
   const INVOICE_STATUS_LABEL = {
     'will-arrive': { text: 'Se marcará como llegado', cls: 'tag-accent' },
     'already-arrived': { text: 'Ya estaba en bodega — se omite', cls: 'tag-neutral' },
     'new': { text: 'Nuevo — se creará como Desconocido', cls: 'tag-warn' },
+    'partial-match': { text: 'Match parcial — verificar', style: 'background:#eee5fb;color:#5b2a9e;border:1px solid #8b5cf6' },
   };
 
   function renderInvoiceReview() {
@@ -1142,12 +1182,15 @@
     const rowsHtml = state.invoiceReviewRows.map((r, i) => {
       const s = INVOICE_STATUS_LABEL[r.status];
       const measure = r.shippingType === 'maritimo' ? `${r.cubicFeet} ft³` : `${r.weightLb} lb`;
+      const trackingCell = r.status === 'partial-match'
+        ? `${esc(r.tracking)}<br><span class="text-muted" style="font-size:11px">↳ coincide con el tracking registrado: ${esc(r.matchedTracking)}</span>`
+        : esc(r.tracking);
       return `
-        <tr>
+        <tr${r.status === 'partial-match' ? ' style="background:#f7f2fd"' : ''}>
           <td><input type="checkbox" data-action="toggle-invoice-row" data-idx="${i}" ${r.selected ? 'checked' : ''} ${r.status === 'already-arrived' ? 'disabled' : ''}></td>
-          <td>${esc(r.tracking)}</td>
+          <td>${trackingCell}</td>
           <td>${esc(measure)}</td>
-          <td><span class="tag ${s.cls}">${s.text}</span></td>
+          <td><span class="tag ${s.cls || ''}" ${s.style ? `style="${s.style}"` : ''}>${s.text}</span></td>
         </tr>`;
     }).join('\n');
     const selectedCount = state.invoiceReviewRows.filter((r) => r.selected && r.status !== 'already-arrived').length;
