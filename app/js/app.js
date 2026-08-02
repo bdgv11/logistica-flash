@@ -104,7 +104,7 @@
     invoiceParsing: false,
     invoiceParsingProgress: 0, // 0-1, page/totalPages while reading
     routeOptimization: {}, // messengerId -> {status: 'loading'|'done'|'error', orderedStops}
-    historyFilters: { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
+    historyFilters: { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
     fatalError: null,
     loggingIn: false,
@@ -147,6 +147,20 @@
   // so it always matches the calendar day showing on the user's own clock.
   function todayISO() {
     const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // Same fix as todayISO(), for a stored UTC timestamp instead of "now":
+  // createdAt comes back from Postgres as a UTC instant (e.g.
+  // "2026-08-01T23:30:00Z"). Slicing its first 10 characters grabs the UTC
+  // calendar date directly — for Costa Rica (UTC-6), anywhere from 6pm to
+  // midnight local time that UTC date has already rolled over to tomorrow,
+  // so a package registered tonight shows as "created" the next day. Date's
+  // local getters do the timezone conversion correctly instead.
+  function localDateFromISO(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
@@ -270,6 +284,27 @@
       const top = node.getBoundingClientRect().top + window.scrollY - 24;
       window.scrollTo({ top, behavior: 'smooth' });
     }, 50);
+  }
+
+  // Clicking "Editar"/"Completar información" scrolls to the form, but
+  // which field was actually missing wasn't visible until you read every
+  // label — border-highlight the specific inputs that are actually empty
+  // for this package instead. Runs after scrollToForm's own timeout so the
+  // fields exist in the DOM (the client-search vs. client-card and
+  // weight vs. cubic-feet inputs are conditionally rendered).
+  function highlightMissingPkgFields(p) {
+    setTimeout(() => {
+      const ids = [];
+      if (!p.clientId) ids.push('pkg-client-search');
+      if (p.arrived) {
+        const measure = p.shippingType === 'maritimo' ? p.cubicFeet : p.weight;
+        if (measure == null) ids.push(p.shippingType === 'maritimo' ? 'pkg-cubic-feet' : 'pkg-weight');
+      }
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('field-missing');
+      });
+    }, 60);
   }
 
   function waPhone(phone) { return '506' + String(phone).replace(/\D/g, ''); }
@@ -993,7 +1028,7 @@
       }
       return `
         <tr>
-          <td>${esc(fmtDateCR((p.createdAt || '').slice(0, 10)) || '—')}</td>
+          <td>${esc(fmtDateCR(localDateFromISO(p.createdAt)) || '—')}</td>
           <td>${esc(p.tracking)}</td>
           <td>${clienteCell}</td>
           <td>${p.shippingType === 'maritimo'
@@ -1011,9 +1046,13 @@
         </tr>`;
     }).join('\n');
 
+    const readyIds = rows.filter(({ p }) => isReadyToRoute(p)).map(({ p }) => p.id);
     container.innerHTML = `
-      <div style="margin-bottom:var(--space-2)">
+      <div style="margin-bottom:var(--space-2);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${rows.length}</span><span>pendientes</span></span>
+        ${state.pkgListFilters.estado === 'bodega-por-entregar' && readyIds.length > 0 ? `
+          <button class="btn btn-primary" type="button" data-action="assign-all-ready" data-ids="${esc(JSON.stringify(readyIds))}">Asignar todos al mensajero (${readyIds.length}) →</button>
+        ` : ''}
       </div>
       <div class="table-scroll">
         <table class="table" style="min-width:820px">
@@ -1543,11 +1582,20 @@
   // ── HISTORIAL ────────────────────────────────────────────────────────────
   // Paquetes ya marcados "enviado", como registro para filtrar y exportar —
   // no como flujo activo (esos ya salieron de Lista del día).
+  // Delivered-but-unpaid ("Entregado — Debe") packages used to be invisible
+  // here until someone got around to marking them paid — they only showed
+  // in Lista del día. They belong in Historial too (it's a completed
+  // delivery, just not a closed-out one yet), flagged so it's obvious at a
+  // glance which rows still need collecting. No sentDate yet for those, so
+  // `date` falls back to deliveredDate — used for sorting and the date
+  // filters instead of sentDate directly, or every "debe" row would vanish
+  // the moment any date range filter is applied.
   function getHistoryRows() {
     const f = state.historyFilters;
     const q = normalize(f.client).trim();
+    const qTracking = normalize(f.tracking).trim();
     return state.packages
-      .filter((p) => p.sent)
+      .filter((p) => p.sent || p.delivered)
       .map((p) => {
         const c = clientById(p.clientId);
         const mm = c ? messengerForZone(c.province) : null;
@@ -1558,15 +1606,17 @@
           clientName: c ? clientLabel(c) : 'Cliente eliminado',
           messengerId: mm ? mm.id : null,
           messengerName: mm ? mm.name : 'Sin mensajero',
-          sentDate: p.sentDate || '',
+          status: p.sent ? 'paid' : 'debe',
+          date: p.sentDate || p.deliveredDate || '',
         };
       })
       .filter((r) => !q || normalize(r.clientName).includes(q))
+      .filter((r) => !qTracking || normalize(r.tracking).includes(qTracking))
       .filter((r) => !f.messengerId || r.messengerId === f.messengerId)
-      .filter((r) => !f.dateFrom || (r.sentDate && r.sentDate >= f.dateFrom))
-      .filter((r) => !f.dateTo || (r.sentDate && r.sentDate <= f.dateTo))
+      .filter((r) => !f.dateFrom || (r.date && r.date >= f.dateFrom))
+      .filter((r) => !f.dateTo || (r.date && r.date <= f.dateTo))
       .filter((r) => !f.minAmount || r.cost >= parseFloat(f.minAmount))
-      .sort((a, b) => (b.sentDate || '').localeCompare(a.sentDate || ''));
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }
 
   function renderHistorial() {
@@ -1574,13 +1624,17 @@
     return `
       <div>
         <h1 style="margin-bottom:2px">Historial de entregas</h1>
-        <p class="text-muted" style="margin-bottom:var(--space-6)">Paquetes ya entregados y pagados. Filtra y descarga el detalle en Excel.</p>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Paquetes ya entregados, pagados o pendientes de cobro. Filtra y descarga el detalle en Excel.</p>
 
         <div class="card elev-sm" style="margin-bottom:var(--space-4)">
           <div style="display:grid;min-width:0;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--space-3)">
             <div class="field">
               <label>Cliente</label>
               <input class="input" id="history-client" type="text" value="${esc(f.client)}" placeholder="Buscar por nombre">
+            </div>
+            <div class="field">
+              <label>Tracking</label>
+              <input class="input" id="history-tracking" type="text" value="${esc(f.tracking)}" placeholder="Buscar por tracking">
             </div>
             <div class="field">
               <label>Mensajero</label>
@@ -1617,15 +1671,27 @@
     const page = Math.min(Math.max(1, state.historyPage), totalPages);
     const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-    const tableRows = pageRows.map((h) => `
-      <tr>
+    const tableRows = pageRows.map((h) => {
+      const isDebe = h.status === 'debe';
+      const estadoTag = isDebe
+        ? `<span class="tag" style="background:#fdecc8;color:#8a5a00;border:1px solid #e0a800">Debe</span>`
+        : `<span class="tag tag-accent">Pagado</span>`;
+      return `
+      <tr${isDebe ? ' style="background:#fdecc8"' : ''}>
         <td>${esc(h.clientName)}</td>
         <td>${esc(h.tracking)}</td>
         <td>${esc(h.messengerName)}</td>
         <td>$${fmtMoney(h.cost)}</td>
         <td>₡${fmtCRC(h.cost * state.settings.crcRate)}</td>
-        <td>${esc(fmtDateCR(h.sentDate) || '—')}</td>
-      </tr>`).join('\n');
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${estadoTag}
+            ${isDebe ? `<button class="btn btn-secondary" type="button" data-action="mark-paid" data-id="${h.id}" style="white-space:nowrap">Marcar pagado</button>` : ''}
+          </div>
+        </td>
+        <td>${esc(fmtDateCR(h.date) || '—')}</td>
+      </tr>`;
+    }).join('\n');
 
     container.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:var(--space-3)">
@@ -1635,8 +1701,8 @@
         </button>
       </div>
       <div class="table-scroll">
-        <table class="table" style="min-width:640px">
-          <thead><tr><th>Cliente</th><th>Tracking</th><th>Mensajero</th><th>Costo ($)</th><th>Costo (₡)</th><th>Fecha pagado</th></tr></thead>
+        <table class="table" style="min-width:700px">
+          <thead><tr><th>Cliente</th><th>Tracking</th><th>Mensajero</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th>Fecha</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
@@ -1651,9 +1717,10 @@
 
   function exportHistoryCSV() {
     const rows = getHistoryRows();
-    const header = ['Cliente', 'Tracking', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Fecha pagado'];
+    const header = ['Cliente', 'Tracking', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Estado', 'Fecha'];
     const lines = [header.join(',')].concat(rows.map((h) => [
-      h.clientName, h.tracking, h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate), fmtDateCR(h.sentDate),
+      h.clientName, h.tracking, h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate),
+      h.status === 'debe' ? 'Debe' : 'Pagado', fmtDateCR(h.date),
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')));
     const csv = '\uFEFF' + lines.join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1761,6 +1828,22 @@
   async function doAssignRoute(id) {
     await withBusy(async () => {
       await LF.db.assignToRoute(id, todayISO());
+      await reloadPackages();
+      render();
+    });
+  }
+
+  function assignAllReady(ids) {
+    if (!ids.length) return;
+    askConfirm('Asignar todos al mensajero', `¿Asignar los ${ids.length} paquetes listos a la ruta de hoy? Cada uno pasará al mensajero de su zona.`, () => doAssignAllReady(ids), 'Asignar todos');
+  }
+
+  async function doAssignAllReady(ids) {
+    await withBusy(async () => {
+      const today = todayISO();
+      for (const id of ids) {
+        await LF.db.assignToRoute(id, today);
+      }
       await reloadPackages();
       render();
     });
@@ -1956,6 +2039,7 @@
         };
         render();
         scrollToForm('pkg-form-card');
+        highlightMissingPkgFields(p);
         return;
       }
       case 'arrive-pkg': return void markArrived(el.dataset.id);
@@ -1985,13 +2069,19 @@
         return;
 
       case 'assign-route': return void assignRoute(el.dataset.id);
+      case 'assign-all-ready': {
+        let ids = [];
+        try { ids = JSON.parse(el.dataset.ids || '[]'); } catch (err) { ids = []; }
+        assignAllReady(ids);
+        return;
+      }
       case 'unassign-route': return void unassignRoute(el.dataset.id);
       case 'optimize-route': return void optimizeRoute(el.dataset.id);
       case 'deliver-pkg': return void deliverPkg(el.dataset.id, el.dataset.paid === '1');
       case 'mark-paid': return void markPaid(el.dataset.id);
 
       case 'clear-history-filters':
-        state.historyFilters = { client: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' };
+        state.historyFilters = { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' };
         state.historyPage = 1;
         render();
         return;
@@ -2070,6 +2160,9 @@
   });
 
   document.body.addEventListener('input', (e) => {
+    if (e.target.classList && e.target.classList.contains('field-missing') && e.target.value.trim()) {
+      e.target.classList.remove('field-missing');
+    }
     const id = e.target.id;
     if (id === 'pkg-tracking') { state.pkgDraft.tracking = e.target.value; return updatePkgSubmitState(); }
     if (id === 'pkg-weight') {
@@ -2121,6 +2214,12 @@
     if (id === 'messenger-origin') { state.messengerDraft.origin = e.target.value; return; }
     if (id === 'history-client') {
       state.historyFilters.client = e.target.value;
+      state.historyPage = 1;
+      renderHistoryList();
+      return;
+    }
+    if (id === 'history-tracking') {
+      state.historyFilters.tracking = e.target.value;
       state.historyPage = 1;
       renderHistoryList();
       return;

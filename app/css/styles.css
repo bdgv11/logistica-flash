@@ -150,6 +150,9 @@ figcaption {
 .input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
 .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
 textarea.input { min-height: 90px; resize: vertical; }
+/* Flags a field left empty on a package that needs it (Editar/Completar
+   información) — cleared automatically once the field gets a value. */
+.field-missing { border-color: #d92d20 !important; box-shadow: 0 0 0 2px rgba(217, 45, 32, 0.15); }
 
 /* — cards — */
 .card {
