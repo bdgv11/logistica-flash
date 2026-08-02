@@ -238,6 +238,20 @@
   // (zoom levels, place IDs, etc.) picked up while scanning a URL for coords.
   function extractLatLng(url) {
     if (!url) return null;
+    // A Google Maps "place" URL (e.g. .../place/San+José/@9.93,-84.15,13z/
+    // data=...!3d9.928!4d-84.09...) carries two different coordinate pairs:
+    // @lat,lng is just the map viewport's center — wherever the map happened
+    // to be panned/zoomed to — while !3d<lat>!4d<lng> is the actual pinned
+    // place's precise location. They can be several km apart. The viewport
+    // center comes first in the URL, so the generic scan below would always
+    // grab the wrong (less precise) one whenever both are present — check
+    // for the real pin explicitly first.
+    const pin = /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/.exec(url);
+    if (pin) {
+      const lat = parseFloat(pin[1]);
+      const lng = parseFloat(pin[2]);
+      if (lat >= 5 && lat <= 12 && lng <= -81 && lng >= -87) return { lat, lng };
+    }
     const re = /(-?\d{1,2}\.\d{3,})(?:,|%2C|\s)+(-?\d{1,3}\.\d{3,})/gi;
     let m;
     while ((m = re.exec(url))) {
