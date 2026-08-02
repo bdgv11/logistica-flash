@@ -1,0 +1,15 @@
+{
+  "name": "Logística Flash",
+  "short_name": "Log. Flash",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f8f9fc",
+  "theme_color": "#003566",
+  "icons": [
+    {
+      "src": "assets/logo-logistica-flash.png",
+      "sizes": "150x150",
+      "type": "image/png"
+    }
+  ]
+}

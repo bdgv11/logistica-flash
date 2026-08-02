@@ -104,6 +104,7 @@
     invoiceParsing: false,
     invoiceParsingProgress: 0, // 0-1, page/totalPages while reading
     routeOptimization: {}, // messengerId -> {status: 'loading'|'done'|'error', orderedStops}
+    mobileNavOpen: false,
     historyFilters: { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
     fatalError: null,
@@ -398,6 +399,8 @@
     invoice: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg>',
     check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>',
     download: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
+    menu: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>',
+    close: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
   };
 
   // ── DOM roots ────────────────────────────────────────────────────────────
@@ -538,8 +541,20 @@
     const links = TABS.map(([id, label, icon]) =>
       `<a href="#" class="sidebar-link" data-action="set-tab" data-tab="${id}" ${state.tab === id ? "aria-current='page'" : ''}>${ICONS[icon]}<span>${esc(label)}</span></a>`
     ).join('\n');
+    // Below tablet width, .sidebar becomes an off-canvas drawer (see CSS) —
+    // this top bar (hamburger + brand) is the only thing always visible on
+    // mobile, and toggles it open/closed. Hidden entirely on desktop, where
+    // the sidebar is just always there as a fixed column, same as before.
     return `
-      <aside class="sidebar">
+      <div class="mobile-topbar">
+        <button type="button" class="hamburger-btn" data-action="toggle-mobile-nav" aria-label="${state.mobileNavOpen ? 'Cerrar menú' : 'Abrir menú'}">
+          ${state.mobileNavOpen ? ICONS.close : ICONS.menu}
+        </button>
+        <img src="assets/logo-logistica-flash.png" alt="" style="height:26px;width:26px;object-fit:contain;border-radius:6px">
+        <span>Logística Flash</span>
+      </div>
+      <div class="mobile-nav-backdrop${state.mobileNavOpen ? ' is-open' : ''}" data-action="close-mobile-nav"></div>
+      <aside class="sidebar${state.mobileNavOpen ? ' is-open' : ''}">
         <div class="sidebar-brand">
           <img src="assets/logo-logistica-flash.png" alt="Logística Flash" style="height:34px;width:34px;object-fit:contain;border-radius:6px">
           <span>Logística Flash</span>
@@ -607,6 +622,8 @@
     const esperandoLlegada = state.packages.filter((p) => p.clientId && !p.arrived).length;
     const bodegaIncompleto = state.packages.filter((p) => p.clientId && p.arrived && !p.sent && !p.routed && !pkgInfoComplete(p)).length;
     const porAsignar = readyToRoutePackages().length;
+    const debePackages = state.packages.filter((p) => p.delivered && !p.sent);
+    const debeTotal = debePackages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
 
     const parts = [];
     if (pending > 0) parts.push(`${pending} sin identificar`);
@@ -633,6 +650,11 @@
             <div class="card-kicker">Total entregado este mes</div>
             <div class="card-title" style="font-size:34px">$${fmtMoney(totalMonth)}</div>
             <p class="card-body">≈ ₡${fmtCRC(totalMonth * state.settings.crcRate)} · ${monthDeliveredPackages.length} paquetes entregados</p>
+          </div>
+          <div class="card elev-sm"${debePackages.length > 0 ? ' style="border:1px solid #e0a800;background:#fdecc8"' : ''}>
+            <div class="card-kicker">Por cobrar</div>
+            <div class="card-title" style="font-size:34px">${debePackages.length}</div>
+            <p class="card-body">$${fmtMoney(debeTotal)} entregados sin pagar</p>
           </div>
           <div class="card elev-sm">
             <div class="card-kicker">Falta info</div>
@@ -1778,6 +1800,7 @@
   // ── actions ──────────────────────────────────────────────────────────────
   function setTab(tab) {
     state.tab = tab;
+    state.mobileNavOpen = false; // navigating closes the mobile drawer — no effect on desktop
     if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' }; }
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' }; }
     if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; state.messengerError = ''; }
@@ -2049,6 +2072,14 @@
       }
       case 'logout': return void doLogout();
       case 'set-tab': return setTab(el.dataset.tab);
+      case 'toggle-mobile-nav':
+        state.mobileNavOpen = !state.mobileNavOpen;
+        render();
+        return;
+      case 'close-mobile-nav':
+        state.mobileNavOpen = false;
+        render();
+        return;
 
       case 'edit-client': {
         const c = clientById(el.dataset.id);
