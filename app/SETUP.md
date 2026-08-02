@@ -102,6 +102,14 @@ cuenta de Google ni a su proyecto de Supabase):
 Con eso listo, el botón empieza a funcionar solo — no hace falta ningún
 cambio más en la app.
 
+Opcional, un paso extra de seguridad una vez que sepas en qué dominio vas a
+publicar la app (Netlify, Vercel, etc.): restringí qué sitios pueden llamar
+la función (por defecto acepta cualquiera, aunque igual exige que quien
+llame tenga sesión iniciada):
+```bash
+supabase secrets set ALLOWED_ORIGIN=https://tu-dominio.com
+```
+
 ## Notas de diseño / decisiones tomadas
 
 - **Multi-dispositivo real**: ambas administradoras ven los mismos clientes,

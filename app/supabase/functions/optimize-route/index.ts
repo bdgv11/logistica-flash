@@ -10,8 +10,14 @@
 // See SETUP.md for the full walkthrough (Google Cloud project, enabling the
 // API, deploying this function).
 
+// '*' by default so this works out of the box before anyone's picked a
+// hosting domain — this endpoint is still gated by Supabase's JWT
+// verification either way (a request needs a valid session token,
+// regardless of origin), so this alone was never the access control. Set
+// the ALLOWED_ORIGIN secret once you know your real domain to tighten it:
+//   supabase secrets set ALLOWED_ORIGIN=https://tu-dominio.com
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -23,6 +29,11 @@ function json(body: unknown, status = 200) {
 }
 
 type LatLng = { lat: number; lng: number };
+
+// Google's Routes API caps the total origin+destination+intermediates at
+// 25 waypoints. Reject early with a clear message instead of forwarding a
+// too-large request and surfacing Google's raw (much less clear) error.
+const MAX_STOPS = 23;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
@@ -43,6 +54,9 @@ Deno.serve(async (req) => {
     !!v && typeof (v as LatLng).lat === 'number' && typeof (v as LatLng).lng === 'number';
   if (!isLatLng(origin) || !Array.isArray(stops) || stops.length === 0 || !stops.every(isLatLng)) {
     return json({ error: 'Se espera { origin: {lat,lng}, stops: [{lat,lng}, ...] }.' }, 400);
+  }
+  if (stops.length > MAX_STOPS) {
+    return json({ error: `Esta ruta tiene ${stops.length} paradas — Google Routes API solo optimiza hasta ${MAX_STOPS} a la vez. Dividí la ruta en grupos más pequeños.` }, 400);
   }
 
   // No fixed final destination for a delivery route — only the order of the

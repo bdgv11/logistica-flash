@@ -104,6 +104,18 @@ alter table public.packages add column if not exists cubic_feet numeric(8,2);
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);
 
+-- Nothing used to stop the same tracking from being saved twice (double
+-- submit, a race between the 2 admins, etc.) — the app's own matching logic
+-- (factura, búsquedas) just takes whichever one it finds first, silently.
+-- Case/whitespace-insensitive to match how the app already compares
+-- trackings everywhere else (normalize() in js/app.js).
+-- If this fails on first run, it means real duplicates already exist — find
+-- them with:
+--   select lower(trim(tracking)), array_agg(id) from public.packages
+--   group by 1 having count(*) > 1;
+-- and merge/delete them by hand before re-running this file.
+create unique index if not exists packages_tracking_unique_idx on public.packages (lower(trim(tracking)));
+
 -- ── app settings ─────────────────────────────────────────────────────────────
 -- Single shared row (id = 1) so cost calculations (Registrar paquete, Lista
 -- del día, facturas) read from one place both admins can edit, instead of a

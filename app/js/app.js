@@ -307,9 +307,24 @@
     }, 60);
   }
 
-  function waPhone(phone) { return '506' + String(phone).replace(/\D/g, ''); }
+  // Strips a leading "506" before re-adding it — some admins type the
+  // country code themselves (e.g. "506-8801-0001"), which without this
+  // becomes "50650688010001" and silently breaks the wa.me link.
+  function waPhone(phone) {
+    const digits = String(phone).replace(/\D/g, '');
+    return '506' + (digits.startsWith('506') ? digits.slice(3) : digits);
+  }
 
   function clientById(id) { return state.clients.find((c) => c.id === id) || null; }
+
+  // Ubicación/origin fields are meant to hold a pasted Maps/Waze link, but
+  // nothing stops someone from pasting (or a stray paste leaving)
+  // "javascript:..." there instead — esc() only escapes HTML characters, it
+  // doesn't stop that from becoming a live href that runs script on click.
+  // Only ever render it as a link if it's actually http(s).
+  function safeHref(url) {
+    return /^https?:\/\//i.test(String(url || '').trim()) ? url : '';
+  }
 
   function fmtMoney(n) { return Number(n || 0).toFixed(2); }
 
@@ -322,6 +337,9 @@
     const msg = (err && err.message) || '';
     if (/failed to fetch|networkerror|load failed|network request failed/i.test(msg)) {
       return 'No hay conexión con el servidor. Revisa tu internet y vuelve a intentar.';
+    }
+    if (/duplicate key value violates unique constraint.*tracking/i.test(msg)) {
+      return 'Ya existe un paquete con ese tracking. Buscalo en "Registrar paquete" en vez de crear uno nuevo.';
     }
     return msg || 'Ocurrió un error inesperado.';
   }
@@ -341,7 +359,7 @@
       await fn();
     } catch (err) {
       console.error(err);
-      window.alert(err && err.message ? err.message : 'Ocurrió un error. Intenta de nuevo.');
+      window.alert(describeError(err));
     } finally {
       state.busy = false;
     }
@@ -750,7 +768,7 @@
           <td><span class="tag tag-neutral">${esc(c.province || 'Sin provincia')}</span></td>
           <td>${esc(c.canton || '—')}</td>
           <td>${esc(c.phone)}</td>
-          <td>${c.address
+          <td>${safeHref(c.address)
             ? `<a href="${esc(c.address)}" target="_blank" rel="noopener">Ver ubicación</a>`
             : `<span class="text-muted">Sin dirección</span>`}</td>
           <td style="text-align:right;white-space:nowrap">
@@ -959,7 +977,7 @@
             <div style="border:1px solid var(--color-divider);padding:var(--space-3);margin-bottom:var(--space-3)">
               <div style="font-family:var(--font-heading);font-weight:800;font-size:17px;margin-bottom:6px">${esc(clientLabel(selectedClient))}</div>
               <p class="card-body" style="margin-bottom:4px">Teléfono: ${esc(selectedClient.phone)}</p>
-              <p class="card-body" style="margin-bottom:6px">Dirección: ${selectedClient.address ? `<a href="${esc(selectedClient.address)}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span class="text-muted">Sin dirección</span>'}</p>
+              <p class="card-body" style="margin-bottom:6px">Dirección: ${safeHref(selectedClient.address) ? `<a href="${esc(selectedClient.address)}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span class="text-muted">Sin dirección</span>'}</p>
               <div style="display:flex;gap:6px">
                 <span class="tag tag-neutral">${esc(clientZoneLabel(selectedClient))}</span>
                 <span class="tag tag-accent">Mensajero: ${esc(selectedMessenger ? selectedMessenger.name : 'Sin mensajero')}</span>
@@ -1326,6 +1344,12 @@
       window.alert('No se pudo optimizar: estos clientes no tienen una ubicación reconocible — ' + missing.map((x) => x.stop.c.name).join(', '));
       return;
     }
+    // Same cap the Edge Function enforces (Google's Routes API limit) —
+    // catching it here first skips a pointless round trip.
+    if (withCoords.length > 23) {
+      window.alert(`Esta ruta tiene ${withCoords.length} paradas — Google Routes API solo optimiza hasta 23 a la vez. Dividí la ruta en grupos más pequeños.`);
+      return;
+    }
     state.routeOptimization[messengerId] = { status: 'loading' };
     render();
     try {
@@ -1415,7 +1439,7 @@
           return `
           <tr${isDebe ? ' style="background:#fdecc8"' : ''}>
             <td>${esc(stop.c.name)}</td>
-            <td><a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a></td>
+            <td>${safeHref(stop.c.address) ? `<a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a>` : `<span class="text-muted">Sin dirección</span>`}</td>
             <td>${esc(stop.c.phone)}</td>
             <td>${esc(p.tracking)}</td>
             <td>$${fmtMoney(p.cost)}</td>
@@ -1522,7 +1546,7 @@
 
     const rows = state.messengers.map((m) => {
       const incomplete = m.zones.length === 0;
-      const hasOrigin = !!(m.origin && m.origin.trim());
+      const hasOrigin = !!safeHref(m.origin);
       return `
         <tr>
           <td>${esc(m.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Sin zona</span>' : ''}</td>
@@ -1965,7 +1989,20 @@
   }
 
   function deleteMessenger(id) {
-    askConfirm('Eliminar mensajero', '¿Eliminar este mensajero? Las zonas que cubre quedarán sin mensajero asignado.', () => doDeleteMessenger(id));
+    const m = state.messengers.find((x) => x.id === id);
+    // A package's mensajero is computed live from the client's province, not
+    // stored on the package — so deleting a messenger with an active route
+    // today doesn't fail or cascade anything, it just makes those packages
+    // silently stop matching any mensajero card in Lista del día (they stay
+    // routed, just invisible until someone thinks to look for them). Worth
+    // a specific number here instead of the generic zone warning alone.
+    const activeCount = m
+      ? activeRoutePackages().filter((p) => { const c = clientById(p.clientId); return c && c.province && m.zones.includes(c.province); }).length
+      : 0;
+    const activeWarning = activeCount > 0
+      ? ` Tiene ${activeCount} paquete${activeCount === 1 ? '' : 's'} en ruta activa hoy — seguirán marcados "en ruta", pero dejarán de aparecer en ninguna tarjeta de Lista del día hasta que les asignes otro mensajero a esa zona.`
+      : '';
+    askConfirm('Eliminar mensajero', `¿Eliminar este mensajero? Las zonas que cubre quedarán sin mensajero asignado.${activeWarning}`, () => doDeleteMessenger(id));
   }
 
   async function doDeleteMessenger(id) {
