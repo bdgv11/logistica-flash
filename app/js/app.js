@@ -579,14 +579,14 @@
 
         <div class="card elev-sm" style="max-width:480px">
           <div class="field">
-            <label>Peso por libra ($/lb)</label>
-            <input class="input" id="settings-rate-per-lb" type="number" step="0.01" min="0" value="${esc(s.ratePerLb)}">
-            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se usa para calcular el costo estimado al registrar un paquete.</p>
-          </div>
-          <div class="field">
             <label>Tipo de cambio (₡ por $)</label>
             <input class="input" id="settings-crc-rate" type="number" step="1" min="0" value="${esc(s.crcRate)}">
             <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se usa para mostrar los costos en colones en las listas y facturas.</p>
+          </div>
+          <div class="field">
+            <label>Peso por libra ($/lb)</label>
+            <input class="input" id="settings-rate-per-lb" type="number" step="0.01" min="0" value="${esc(s.ratePerLb)}">
+            <p class="text-muted" style="margin:4px 0 0;font-size:13px">Se usa para calcular el costo estimado al registrar un paquete.</p>
           </div>
           <div class="field">
             <label>Precio por pie cúbico ($/ft³)</label>
@@ -753,7 +753,7 @@
           normalize(c.province).includes(q) ||
           normalize(c.canton).includes(q))
       : state.clients;
-    const sorted = [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const sorted = [...filtered].sort((a, b) => (a.codeSeq || 0) - (b.codeSeq || 0));
 
     const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
     const page = Math.min(Math.max(1, state.clientsPage), totalPages);
@@ -881,7 +881,9 @@
       })
       .filter(({ p, c }) => !q || normalize(p.tracking).includes(q) || (c && (normalize(c.name).includes(q) || normalize(formatClientCode(c.codeSeq)).includes(q))))
       .filter(({ estado }) => !f.estado || f.estado === estado)
-      .sort((a, b) => (b.p.createdAt || '').localeCompare(a.p.createdAt || ''));
+      // Oldest first — this is a work queue, not a feed; the one waiting
+      // longest should be first in line, not buried once newer ones pile up.
+      .sort((a, b) => (a.p.createdAt || '').localeCompare(b.p.createdAt || ''));
   }
 
   function renderPaquete() {
@@ -895,7 +897,7 @@
     return `
       <div>
         <h1 style="margin-bottom:2px">Registrar paquete</h1>
-        <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente de una vez — o déjalo sin identificar si todavía no sabés de quién es. Cuando esté físicamente aquí, márcalo como llegado — solo entonces entra a la ruta del mensajero.</p>
+        <p class="text-muted" style="margin-bottom:var(--space-6)">Crea el paquete e identifícalo con su cliente, o dejalo sin identificar si no sabés de quién es. Marcalo como llegado solo cuando esté físicamente aquí — así entra a la ruta del mensajero.</p>
 
         <div class="card elev-sm" style="max-width:900px;margin-bottom:var(--space-4)">
           <div class="card-kicker">Factura del casillero</div>
@@ -950,7 +952,10 @@
               </div>
               <div class="field">
                 <label>Costo estimado ($${state.settings.pricePerCubicFt}/ft³) — editable</label>
-                <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+                <div class="input-currency-wrap">
+                  <span class="input-currency-sign">$</span>
+                  <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+                </div>
                 <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
               </div>
             ` : `
@@ -960,7 +965,10 @@
               </div>
               <div class="field">
                 <label>Costo estimado ($${state.settings.ratePerLb}/lb) — editable</label>
-                <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+                <div class="input-currency-wrap">
+                  <span class="input-currency-sign">$</span>
+                  <input class="input" id="pkg-cost" type="number" step="0.01" min="0" value="${esc(draft.cost)}" placeholder="0.00">
+                </div>
                 <p class="text-muted" id="pkg-cost-crc" style="margin:4px 0 0;font-size:13px">${draft.cost ? '≈ ₡' + fmtCRC(parseFloat(draft.cost) * state.settings.crcRate) : ''}</p>
               </div>
             `}
@@ -1073,8 +1081,17 @@
         ` : ''}
       </div>
       <div class="table-scroll">
-        <table class="table" style="min-width:820px">
-          <thead><tr><th>Fecha</th><th>Tracking</th><th>Cliente</th><th>Peso/Volumen</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+        <table class="table" style="min-width:1320px">
+          <thead><tr>
+            <th style="width:100px">Fecha</th>
+            <th style="width:190px">Tracking</th>
+            <th style="width:240px">Cliente</th>
+            <th style="width:120px">Peso/Volumen</th>
+            <th style="width:100px">Costo ($)</th>
+            <th style="width:120px">Costo (₡)</th>
+            <th style="width:190px">Estado</th>
+            <th style="width:260px;text-align:right">Acciones</th>
+          </tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
@@ -1285,8 +1302,11 @@
   // can be complete and ready and still not belong on today's route (the
   // client might not be able to receive it yet). That queue lives in
   // Registrar paquete instead; this screen is exclusively the active route.
+  // Once delivered — paid or not — it's done as far as the mensajero's route
+  // is concerned; it moves on to Historial (which already shows "Debe" rows
+  // with their own "Marcar pagado" button) instead of lingering here.
   function activeRoutePackages() {
-    return state.packages.filter((p) => p.routed && !p.sent);
+    return state.packages.filter((p) => p.routed && !p.sent && !p.delivered);
   }
 
   // saveMessenger() now blocks new overlaps, but data saved before that check
@@ -1389,11 +1409,10 @@
       const routeOpt = state.routeOptimization[m.id];
       const orderedStops = routeOpt && routeOpt.status === 'done' ? routeOpt.orderedStops : orderStopsByRoute(stops, originCoord);
 
-      // The "ruta de hoy" message is only about what's still coming — once
-      // something's delivered, resending it in that list makes no sense.
-      const pendingStops = orderedStops
-        .map((stop) => ({ ...stop, packages: stop.packages.filter((p) => !p.delivered) }))
-        .filter((stop) => stop.packages.length > 0);
+      // orderedStops only ever holds still-in-transit packages now
+      // (activeRoutePackages() already excludes delivered ones), so this is
+      // just "everything currently in the route."
+      const pendingStops = orderedStops;
       const pendingCount = pendingStops.reduce((n, s) => n + s.packages.length, 0);
 
       const lines = pendingStops.map((stop, i) => {
@@ -1428,16 +1447,14 @@
         const hasPhone = !!(stop.c.phone && stop.c.phone.trim());
         const stopInvoiceHref = hasPhone ? invoiceHrefForStop(stop) : '';
         return stop.packages.map((p) => {
-          const isDebe = p.delivered && !p.sent;
-          const estadoTag = isDebe
-            ? `<span class="tag" style="background:#fdecc8;color:#8a5a00;border:1px solid #e0a800">Entregado — Debe</span>`
-            : `<span class="tag tag-accent">En ruta</span>`;
-          const actions = isDebe
-            ? `<button class="btn btn-secondary" type="button" data-action="mark-paid" data-id="${p.id}" style="white-space:nowrap">Marcar pagado</button>`
-            : `<button class="btn btn-secondary" type="button" data-action="deliver-pkg" data-id="${p.id}" data-paid="1" style="white-space:nowrap">Entregado — Pagado</button>
+          // Delivered packages (paid or "debe") leave activeRoutePackages()
+          // entirely, so every row reaching this table is still in transit —
+          // Historial is where "Debe" gets tracked and marked paid now.
+          const estadoTag = `<span class="tag tag-accent">En ruta</span>`;
+          const actions = `<button class="btn btn-secondary" type="button" data-action="deliver-pkg" data-id="${p.id}" data-paid="1" style="white-space:nowrap">Entregado — Pagado</button>
                <button class="btn btn-secondary" type="button" data-action="deliver-pkg" data-id="${p.id}" data-paid="0" style="white-space:nowrap">Entregado — Debe</button>`;
           return `
-          <tr${isDebe ? ' style="background:#fdecc8"' : ''}>
+          <tr>
             <td>${esc(stop.c.name)}</td>
             <td>${safeHref(stop.c.address) ? `<a href="${esc(stop.c.address)}" target="_blank" rel="noopener">Ver ubicación</a>` : `<span class="text-muted">Sin dirección</span>`}</td>
             <td>${esc(stop.c.phone)}</td>
