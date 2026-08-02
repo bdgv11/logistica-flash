@@ -66,6 +66,14 @@ body {
   color: var(--color-text);
   font-family: var(--font-body);
 }
+/* The off-canvas mobile nav drawer (.sidebar) sits at position:fixed,
+   translated off-screen to the left when closed — some mobile browsers
+   still count that off-screen box towards the page's scrollable width,
+   which hands the horizontal scroll to the whole page instead of to
+   .table-scroll, and a wide table then just looks cut off with no way to
+   reach its right-hand columns. The page itself never needs to scroll
+   sideways, so this is safe to close off globally. */
+html, body { overflow-x: hidden; }
 h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -263,8 +271,15 @@ textarea.input { min-height: 90px; resize: vertical; }
     width: min(280px, 82vw); min-height: 100vh;
     transform: translateX(-100%); transition: transform .22s ease;
     overflow-y: auto; box-shadow: var(--shadow-lg);
+    /* Closed, its right edge sits exactly at the screen's left edge — right
+       where a finger lands to start swiping a wide table into view, or
+       where iOS reads its own "swipe from edge to go back" gesture. Even
+       fully off-screen, that's close enough that it can end up eating the
+       touch instead of the table underneath it. Disabled here and
+       re-enabled only while open, so a closed drawer is never in the way. */
+    pointer-events: none;
   }
-  .sidebar.is-open { transform: translateX(0); }
+  .sidebar.is-open { transform: translateX(0); pointer-events: auto; }
   .sidebar-spacer { display: none; }
   .sidebar-user {
     width: 100%; padding: 10px 10px 2px;
