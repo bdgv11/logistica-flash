@@ -17,6 +17,20 @@ window.LF = window.LF || {};
   const PDFJS_VERSION = '6.2.108';
   const PDFJS_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build`;
 
+  // pdf.js (since ~4.5) calls Promise.withResolvers() internally, which iOS
+  // Safari only got in 17.4 (March 2024). On an older iPhone that call is
+  // simply undefined, and the resulting crash surfaces nowhere near this
+  // line — it shows up deep inside pdf.js's minified code as a cryptic
+  // "undefined is not a function" with no mention of Promise.withResolvers
+  // at all. Polyfilling it here, before pdf.js ever loads, is enough.
+  if (typeof Promise.withResolvers !== 'function') {
+    Promise.withResolvers = function () {
+      let resolve, reject;
+      const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    };
+  }
+
   let libPromise = null;
   function loadPdfjs() {
     if (!libPromise) {

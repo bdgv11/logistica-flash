@@ -1095,9 +1095,13 @@
     }).join('\n');
 
     const readyIds = rows.filter(({ p }) => isReadyToRoute(p)).map(({ p }) => p.id);
+    const aereoCount = rows.filter(({ p }) => p.shippingType === 'aereo').length;
+    const maritimoCount = rows.filter(({ p }) => p.shippingType === 'maritimo').length;
     container.innerHTML = `
       <div style="margin-bottom:var(--space-2);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${rows.length}</span><span>pendientes</span></span>
+        <span class="tag tag-neutral" style="display:inline-flex;gap:5px"><span>${aereoCount}</span><span>aéreo</span></span>
+        <span class="tag tag-neutral" style="display:inline-flex;gap:5px"><span>${maritimoCount}</span><span>marítimo</span></span>
         ${state.pkgListFilters.estado === 'bodega-por-entregar' && readyIds.length > 0 ? `
           <button class="btn btn-primary" type="button" data-action="assign-all-ready" data-ids="${esc(JSON.stringify(readyIds))}">Asignar todos al mensajero (${readyIds.length}) →</button>
         ` : ''}
