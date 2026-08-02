@@ -34,8 +34,21 @@ window.LF = window.LF || {};
   let libPromise = null;
   function loadPdfjs() {
     if (!libPromise) {
-      libPromise = import(/* webpackIgnore: true */ `${PDFJS_BASE}/pdf.min.mjs`).then((lib) => {
-        lib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.mjs`;
+      libPromise = import(/* webpackIgnore: true */ `${PDFJS_BASE}/pdf.min.mjs`).then(async (lib) => {
+        // Just pointing GlobalWorkerOptions.workerSrc at the CDN URL (the
+        // "normal" pdf.js setup) makes it construct `new Worker(url, {type:
+        // 'module'})` itself — and iOS Safari refuses to spin up a module
+        // worker whose script lives on a different origin. It doesn't throw
+        // a clear error either: the worker silently never starts, and the
+        // crash instead surfaces later, deep inside pdf.js's minified
+        // response-handling code, as an unrelated-looking "undefined is not
+        // a function". Fetching the worker source ourselves and handing
+        // pdf.js a Worker built from a same-origin blob: URL sidesteps the
+        // restriction entirely — this is the standard workaround for
+        // CDN-hosted pdf.js workers on Safari.
+        const workerCode = await (await fetch(`${PDFJS_BASE}/pdf.worker.min.mjs`)).text();
+        const blobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'text/javascript' }));
+        lib.GlobalWorkerOptions.workerPort = new Worker(blobUrl, { type: 'module' });
         return lib;
       });
     }
