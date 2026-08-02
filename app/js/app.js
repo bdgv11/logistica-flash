@@ -105,6 +105,7 @@
     invoiceParsingProgress: 0, // 0-1, page/totalPages while reading
     routeOptimization: {}, // messengerId -> {status: 'loading'|'done'|'error', orderedStops}
     mobileNavOpen: false,
+    toast: null, // {type: 'success'|'error', message}
     historyFilters: { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
     historyPage: 1,
     fatalError: null,
@@ -384,6 +385,31 @@
 
   function fmtCRC(n) { return Math.round(Number(n) || 0).toLocaleString('es-CR'); }
 
+  // Its own modal-style root, like renderConfirm/renderInvoiceParsingModal —
+  // driven directly off state.toast instead of the main render() cascade, so
+  // showing/hiding it never has to re-render (and potentially disturb) the
+  // whole screen underneath.
+  let toastTimer = null;
+  function renderToast() {
+    if (!toastRoot) return;
+    if (!state.toast) { toastRoot.innerHTML = ''; return; }
+    const { type, message } = state.toast;
+    toastRoot.innerHTML = `
+      <div class="toast toast-${type}" role="status">
+        <span>${esc(message)}</span>
+        <button type="button" class="toast-close" data-action="dismiss-toast" aria-label="Cerrar">${ICONS.close}</button>
+      </div>`;
+  }
+  // Errors stay up longer and need a deliberate dismiss more than a quick
+  // "guardado" confirmation does — a save failing is worth a second look,
+  // not just a flash someone might miss mid-task.
+  function showToast(type, message) {
+    state.toast = { type, message };
+    renderToast();
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { state.toast = null; renderToast(); }, type === 'error' ? 7000 : 2800);
+  }
+
   // Turns whatever a failed request threw into something an administrator can
   // act on. Network failures are by far the most common and used to surface as
   // raw English browser text (or, worse, as "contraseña incorrecta").
@@ -406,14 +432,20 @@
     return describeError(err);
   }
 
-  async function withBusy(fn) {
+  // successMessage is a plain string (not a callback) because every caller
+  // already knows what it did before it did it — "guardar" vs "actualizar",
+  // how many rows, who it reassigned to, etc. are all known from the form/
+  // args at the point withBusy() gets called, so there's no need for a
+  // function evaluated after the fact.
+  async function withBusy(fn, successMessage) {
     if (state.busy) return;
     state.busy = true;
     try {
       await fn();
+      if (successMessage) showToast('success', successMessage);
     } catch (err) {
       console.error(err);
-      window.alert(describeError(err));
+      showToast('error', describeError(err));
     } finally {
       state.busy = false;
     }
@@ -464,6 +496,7 @@
   const confirmRoot = document.getElementById('confirm-root');
   const invoiceReviewRoot = document.getElementById('invoice-review-root');
   const invoiceParsingRoot = document.getElementById('invoice-parsing-root');
+  const toastRoot = document.getElementById('toast-root');
 
   function render() {
     if (state.fatalError) {
@@ -1324,7 +1357,7 @@
       await reloadPackages();
       closeInvoiceReview();
       render();
-    });
+    }, `Factura aplicada — ${selected.length} paquete${selected.length === 1 ? '' : 's'}.`);
   }
 
   // 'partial-match' has no dedicated .tag-* class — .tag-accent-2 exists in
@@ -1892,6 +1925,7 @@
     const province = document.getElementById('client-province').value;
     const canton = document.getElementById('client-canton').value;
     if (!name.trim() || !phone.trim()) return;
+    const isEdit = !!state.clientEditingId;
     await withBusy(async () => {
       const resolvedAddress = await resolveMapLinkIfNeeded(address);
       if (state.clientEditingId) {
@@ -1903,7 +1937,7 @@
       state.clientEditingId = null;
       state.clientDraft = { name: '', phone: '', phone2: '', address: '', addressDetails: '', province: '', canton: '' };
       render();
-    });
+    }, isEdit ? 'Cliente actualizado.' : 'Cliente guardado.');
   }
 
   function deleteClient(id) {
@@ -1915,7 +1949,7 @@
       await LF.db.deleteClient(id);
       await Promise.all([reloadClients(), reloadPackages()]);
       render();
-    });
+    }, 'Cliente eliminado.');
   }
 
   async function savePkg() {
@@ -1936,6 +1970,7 @@
     // arrived — leaving an already-arrived package's original date alone
     // when it's just being edited for something else (weight, cliente...).
     const assignedDate = arrived ? (editing && editing.arrived ? editing.assignedDate : todayISO()) : null;
+    const isEdit = !!state.pkgEditingId;
     await withBusy(async () => {
       const payload = { tracking: tracking.trim(), weight: finalWeight, cubicFeet: finalCubicFeet, shippingType, cost: finalCost, clientId: state.pkgSelectedClientId, arrived, assignedDate };
       if (state.pkgEditingId) {
@@ -1948,7 +1983,7 @@
       state.pkgSelectedClientId = null;
       state.pkgDraft = { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' };
       render();
-    });
+    }, isEdit ? 'Paquete actualizado.' : 'Paquete registrado.');
   }
 
   function markArrived(id) {
@@ -1960,18 +1995,19 @@
       await LF.db.markArrived(id, todayISO());
       await reloadPackages();
       render();
-    });
+    }, 'Paquete marcado como llegado.');
   }
 
   // No confirmation dialog on purpose — this is meant to be a quick, no-
   // friction correction (wrong zone, mensajero out sick, etc), and it's
   // trivially reversible by just picking "Automático (zona)" again.
   async function changePkgMessenger(id, messengerId) {
+    const label = messengerId ? messengerById(messengerId)?.name : null;
     await withBusy(async () => {
       await LF.db.setPackageMessenger(id, messengerId);
       await reloadPackages();
       render();
-    });
+    }, label ? `Paquete reasignado a ${label}.` : 'Vuelto a asignación automática por zona.');
   }
 
   function assignRoute(id) {
@@ -1983,7 +2019,7 @@
       await LF.db.assignToRoute(id, todayISO());
       await reloadPackages();
       render();
-    });
+    }, 'Paquete asignado a la ruta de hoy.');
   }
 
   function assignAllReady(ids) {
@@ -1999,7 +2035,7 @@
       }
       await reloadPackages();
       render();
-    });
+    }, `${ids.length} paquete${ids.length === 1 ? '' : 's'} asignado${ids.length === 1 ? '' : 's'} a la ruta de hoy.`);
   }
 
   function unassignRoute(id) {
@@ -2011,7 +2047,7 @@
       await LF.db.unassignRoute(id);
       await reloadPackages();
       render();
-    });
+    }, 'Paquete quitado de la ruta.');
   }
 
   function deliverPkg(id, paid) {
@@ -2028,7 +2064,7 @@
       await LF.db.markDelivered(id, { deliveredDate: today, paid, paidDate: paid ? today : null });
       await reloadPackages();
       render();
-    });
+    }, paid ? 'Entrega registrada — pagado.' : 'Entrega registrada — queda debiendo.');
   }
 
   function markPaid(id) {
@@ -2040,7 +2076,7 @@
       await LF.db.markPackageSent(id, todayISO());
       await reloadPackages();
       render();
-    });
+    }, 'Pago registrado.');
   }
 
   async function saveSettings(ratePerLb, crcRate, pricePerCubicFt) {
@@ -2069,7 +2105,7 @@
       }
       if (affected.length > 0) await reloadPackages();
       render();
-    });
+    }, 'Configuración guardada.');
   }
 
   async function saveMessenger() {
@@ -2102,6 +2138,7 @@
       render(); return;
     }
     state.messengerError = '';
+    const isEdit = !!state.messengerEditingId;
 
     await withBusy(async () => {
       const resolvedOrigin = await resolveMapLinkIfNeeded(origin);
@@ -2115,7 +2152,7 @@
       state.messengerZonesDraft = [];
       state.messengerDraft = { name: '', phone: '', origin: '' };
       render();
-    });
+    }, isEdit ? 'Mensajero actualizado.' : 'Mensajero guardado.');
   }
 
   function deleteMessenger(id) {
@@ -2140,7 +2177,7 @@
       await LF.db.deleteMessenger(id);
       await reloadMessengers();
       render();
-    });
+    }, 'Mensajero eliminado.');
   }
 
   // ── event delegation ─────────────────────────────────────────────────────
@@ -2169,6 +2206,11 @@
       case 'close-mobile-nav':
         state.mobileNavOpen = false;
         render();
+        return;
+      case 'dismiss-toast':
+        clearTimeout(toastTimer);
+        state.toast = null;
+        renderToast();
         return;
 
       case 'edit-client': {

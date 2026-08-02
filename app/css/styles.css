@@ -9,6 +9,8 @@
   --color-divider: color-mix(in srgb, #2a251f 22%, transparent);
   --color-accent: #003566;
   --color-accent-2: #003566;
+  --color-success: #1f9e56;
+  --color-danger: #c0392b;
 
   --color-neutral-100: #f8f4f4;
   --color-neutral-200: #eae7e7;
@@ -317,6 +319,38 @@ textarea.input { min-height: 90px; resize: vertical; }
 }
 .dialog-body { font-size: 14px; opacity: 0.85; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+
+/* — toast — */
+/* Bottom-anchored (not top) so it never sits under the mobile hamburger
+   bar's sticky top position. z-index above .dialog-backdrop (1000) since a
+   save's result toast can legitimately show up right as/after a dialog
+   closes and should stay visible on top of it. */
+#toast-root {
+  position: fixed; inset: auto 0 0 0; z-index: 1100;
+  display: flex; justify-content: center; pointer-events: none;
+  padding: 0 var(--space-4) var(--space-4);
+}
+.toast {
+  pointer-events: auto;
+  display: flex; align-items: center; gap: 10px;
+  width: min(420px, 100%);
+  padding: 12px 14px; border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  font-family: var(--font-heading); font-weight: 600; font-size: 14px;
+  color: #ffffff;
+  animation: toast-in .18s ease;
+}
+.toast-success { background: var(--color-success); }
+.toast-error { background: var(--color-danger); }
+.toast span { flex: 1; }
+.toast-close {
+  flex: none; display: flex; padding: 2px;
+  background: transparent; border: none; color: inherit; opacity: .85; cursor: pointer;
+}
+.toast-close:hover { opacity: 1; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* — app-specific layout — */
 .app-shell { display: flex; min-height: 100vh; background: var(--color-bg); color: var(--color-text); }
