@@ -34,21 +34,25 @@ window.LF = window.LF || {};
   let libPromise = null;
   function loadPdfjs() {
     if (!libPromise) {
-      libPromise = import(/* webpackIgnore: true */ `${PDFJS_BASE}/pdf.min.mjs`).then(async (lib) => {
-        // Just pointing GlobalWorkerOptions.workerSrc at the CDN URL (the
-        // "normal" pdf.js setup) makes it construct `new Worker(url, {type:
-        // 'module'})` itself — and iOS Safari refuses to spin up a module
-        // worker whose script lives on a different origin. It doesn't throw
-        // a clear error either: the worker silently never starts, and the
-        // crash instead surfaces later, deep inside pdf.js's minified
-        // response-handling code, as an unrelated-looking "undefined is not
-        // a function". Fetching the worker source ourselves and handing
-        // pdf.js a Worker built from a same-origin blob: URL sidesteps the
-        // restriction entirely — this is the standard workaround for
-        // CDN-hosted pdf.js workers on Safari.
-        const workerCode = await (await fetch(`${PDFJS_BASE}/pdf.worker.min.mjs`)).text();
-        const blobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'text/javascript' }));
-        lib.GlobalWorkerOptions.workerPort = new Worker(blobUrl, { type: 'module' });
+      // pdf.js normally runs PDF parsing on a real background Worker. On
+      // some iPhones that Worker fails to come up (pdf.js's own source
+      // already wraps the cross-origin CDN script in a same-origin blob:
+      // URL to deal with that — this isn't a cross-origin problem) and,
+      // instead of a clear error, the crash surfaces later as an
+      // unrelated-looking "undefined is not a function" deep in pdf.js's
+      // response-handling code. Importing the worker module directly here
+      // and exposing it as `window.pdfjsWorker` is pdf.js's own documented
+      // hook for this: when it's present, pdf.js skips creating a Worker at
+      // all and runs the exact same parsing code on the main thread instead
+      // (the same path Node.js uses, which has no Worker support at all).
+      // For a one/two-page invoice that's an imperceptible main-thread
+      // pause, in exchange for removing an entire class of Worker-related
+      // browser bugs.
+      libPromise = Promise.all([
+        import(/* webpackIgnore: true */ `${PDFJS_BASE}/pdf.min.mjs`),
+        import(/* webpackIgnore: true */ `${PDFJS_BASE}/pdf.worker.min.mjs`),
+      ]).then(([lib, workerModule]) => {
+        window.pdfjsWorker = workerModule;
         return lib;
       });
     }
