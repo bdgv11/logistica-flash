@@ -80,7 +80,7 @@
     settings: { ratePerLb: DEFAULT_RATE_PER_LB, crcRate: DEFAULT_CRC_RATE, pricePerCubicFt: DEFAULT_PRICE_PER_CUBIC_FT },
     clientsPage: 1,
     clientEditingId: null,
-    clientDraft: { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' },
+    clientDraft: { name: '', phone: '', phone2: '', address: '', addressDetails: '', province: '', canton: '' },
     messengerEditingId: null,
     messengerZonesDraft: [],
     messengerDraft: { name: '', phone: '', origin: '' },
@@ -190,6 +190,22 @@
   function messengerForZone(province) {
     if (!province) return null;
     return state.messengers.find((m) => Array.isArray(m.zones) && m.zones.includes(province)) || null;
+  }
+
+  function messengerById(id) {
+    if (!id) return null;
+    return state.messengers.find((m) => m.id === id) || null;
+  }
+
+  // A package always goes to the zone's mensajero by default — messengerId
+  // only exists to hand a specific package to someone else when there's a
+  // reason to (client not reachable by their usual mensajero that day, one
+  // mensajero out sick, etc). Every screen that decides "whose route is this
+  // package on" goes through here instead of calling messengerForZone
+  // directly, so the override actually takes effect everywhere.
+  function effectiveMessenger(p, c) {
+    if (p.messengerId) return messengerById(p.messengerId);
+    return c ? messengerForZone(c.province) : null;
   }
 
   function clientZoneLabel(c) {
@@ -723,6 +739,10 @@
             <input class="input" id="client-phone" type="tel" value="${esc(f.phone)}" placeholder="Ej: 8888-1234">
           </div>
           <div class="field">
+            <label>Teléfono 2 — opcional</label>
+            <input class="input" id="client-phone2" type="tel" value="${esc(f.phone2)}" placeholder="Ej: 8888-5678">
+          </div>
+          <div class="field">
             <label>Dirección (link de Waze o Google Maps) — opcional</label>
             <input class="input" id="client-address" type="text" value="${esc(f.address)}" placeholder="Pega aquí el link de ubicación">
           </div>
@@ -772,6 +792,7 @@
           normalize(c.name).includes(q) ||
           normalize(formatClientCode(c.codeSeq)).includes(q) ||
           normalize(c.phone).includes(q) ||
+          normalize(c.phone2).includes(q) ||
           normalize(c.province).includes(q) ||
           normalize(c.canton).includes(q))
       : state.clients;
@@ -789,7 +810,7 @@
           <td>${esc(c.name)}${incomplete ? '<span class="tag tag-warn" style="margin-left:6px">Falta info</span>' : ''}</td>
           <td><span class="tag tag-neutral">${esc(c.province || 'Sin provincia')}</span></td>
           <td>${esc(c.canton || '—')}</td>
-          <td>${esc(c.phone)}</td>
+          <td>${esc(c.phone)}${c.phone2 ? `<br><span class="text-muted" style="font-size:12px">${esc(c.phone2)}</span>` : ''}</td>
           <td>${safeHref(c.address)
             ? `<a href="${esc(c.address)}" target="_blank" rel="noopener">Ver ubicación</a>`
             : `<span class="text-muted">Sin dirección</span>`}</td>
@@ -868,7 +889,7 @@
 
   function pkgHasMessenger(p) {
     const c = clientById(p.clientId);
-    return !!(c && c.province && state.messengers.some((m) => m.zones.includes(c.province)));
+    return !!(c && effectiveMessenger(p, c));
   }
 
   // Ready doesn't mean gone: even a complete, arrived package waits here
@@ -1006,7 +1027,7 @@
           ` : `
             <div style="border:1px solid var(--color-divider);padding:var(--space-3);margin-bottom:var(--space-3)">
               <div style="font-family:var(--font-heading);font-weight:800;font-size:17px;margin-bottom:6px">${esc(clientLabel(selectedClient))}</div>
-              <p class="card-body" style="margin-bottom:4px">Teléfono: ${esc(selectedClient.phone)}</p>
+              <p class="card-body" style="margin-bottom:4px">Teléfono: ${esc(selectedClient.phone)}${selectedClient.phone2 ? ` / ${esc(selectedClient.phone2)}` : ''}</p>
               <p class="card-body" style="margin-bottom:6px">Dirección: ${safeHref(selectedClient.address) ? `<a href="${esc(selectedClient.address)}" target="_blank" rel="noopener">Ver ubicación</a>` : '<span class="text-muted">Sin dirección</span>'}</p>
               <div style="display:flex;gap:6px">
                 <span class="tag tag-neutral">${esc(clientZoneLabel(selectedClient))}</span>
@@ -1069,7 +1090,11 @@
         accion = `<button class="btn btn-primary" type="button" data-action="edit-pkg" data-id="${p.id}">Completar información →</button>`;
       } else if (!pkgHasMessenger(p)) {
         estadoLabel = 'En Bodega — Por entregar';
-        accion = `<button class="btn btn-secondary" type="button" disabled title="Ningún mensajero cubre la provincia de este cliente">Sin mensajero para su zona</button>`;
+        accion = `
+          <select class="input" data-action="change-pkg-messenger" data-id="${p.id}" title="Ningún mensajero cubre la provincia de este cliente — elegí uno manualmente" style="font-size:13px">
+            <option value="">Elegir mensajero manualmente…</option>
+            ${state.messengers.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('')}
+          </select>`;
       } else {
         estadoLabel = 'En Bodega — Por entregar';
         accion = `<button class="btn btn-primary" type="button" data-action="assign-route" data-id="${p.id}">Asignar al mensajero →</button>`;
@@ -1358,7 +1383,7 @@
   function stopsForMessenger(m) {
     const entries = activeRoutePackages()
       .map((p) => ({ p, c: clientById(p.clientId) }))
-      .filter(({ c }) => c && c.province && m.zones.includes(c.province));
+      .filter(({ p, c }) => c && effectiveMessenger(p, c)?.id === m.id);
     const stopsByClient = new Map();
     const stops = [];
     entries.forEach(({ p, c }) => {
@@ -1390,10 +1415,10 @@
       window.alert('No se pudo optimizar: estos clientes no tienen una ubicación reconocible — ' + missing.map((x) => x.stop.c.name).join(', '));
       return;
     }
-    // Same cap the Edge Function enforces (Google's Routes API limit) —
-    // catching it here first skips a pointless round trip.
-    if (withCoords.length > 23) {
-      window.alert(`Esta ruta tiene ${withCoords.length} paradas — Google Routes API solo optimiza hasta 23 a la vez. Dividí la ruta en grupos más pequeños.`);
+    // Same cap the Edge Function enforces — catching it here first skips a
+    // pointless round trip.
+    if (withCoords.length > 100) {
+      window.alert(`Esta ruta tiene ${withCoords.length} paradas — esta función solo maneja hasta 100 a la vez. Dividí la ruta en grupos más pequeños.`);
       return;
     }
     state.routeOptimization[messengerId] = { status: 'loading' };
@@ -1419,7 +1444,7 @@
     const cards = state.messengers.map((m) => {
       const entries = activeRoutePackages()
         .map((p) => ({ p, c: clientById(p.clientId) }))
-        .filter(({ c }) => c && c.province && m.zones.includes(c.province));
+        .filter(({ p, c }) => c && effectiveMessenger(p, c)?.id === m.id);
 
       const totalCost = entries.reduce((sum, { p }) => sum + (Number(p.cost) || 0), 0);
       const totalCostCRC = totalCost * state.settings.crcRate;
@@ -1444,9 +1469,10 @@
       const lines = pendingStops.map((stop, i) => {
         const trackings = stop.packages.map((p) => p.tracking);
         const detailLine = stop.c.addressDetails ? `\nDetalle: ${stop.c.addressDetails}` : '';
-        const stopCost = stop.packages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
-        const stopCostCRC = fmtCRC(stopCost * state.settings.crcRate);
-        return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${trackings.length}\nTracking: ${trackings.join(', ')}\nMonto a cobrar: ₡${stopCostCRC} ($${fmtMoney(stopCost)} USD)`;
+        // No amount to collect here on purpose — this message is the
+        // mensajero's route sheet, not a bill. The client-facing factura
+        // (invoiceMessageForStop, below) is where the amount belongs.
+        return `${i + 1}. ${stop.c.name}\nDireccion: ${stop.c.address}${detailLine}\nTelefono: ${stop.c.phone}\nPaquetes: ${trackings.length}\nTracking: ${trackings.join(', ')}`;
       });
       const message = `Ruta de hoy - ${zoneLabel} (${pendingCount} paquetes)\n\n` + lines.join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n');
       const waHref = `https://wa.me/${waPhone(m.phone)}?text=${encodeURIComponent(message)}`;
@@ -1455,16 +1481,19 @@
       // esta ruta — no una por paquete, así un cliente con 3 paquetes recibe
       // una sola factura combinada en vez de 3 mensajes separados.
       const invoiceMessageForStop = (stop) => {
-        const totalWeight = stop.packages.filter((p) => p.shippingType !== 'maritimo').reduce((sum, p) => sum + (Number(p.weight) || 0), 0);
-        const totalCubicFeet = stop.packages.filter((p) => p.shippingType === 'maritimo').reduce((sum, p) => sum + (Number(p.cubicFeet) || 0), 0);
         const totalCost = stop.packages.reduce((sum, p) => sum + (Number(p.cost) || 0), 0);
-        const trackings = stop.packages.map((p) => p.tracking).join(', ');
         const costCRC = fmtCRC(totalCost * state.settings.crcRate);
         const pkgWord = stop.packages.length === 1 ? 'tu paquete' : 'tus paquetes';
-        const measureLines = [];
-        if (totalWeight > 0) measureLines.push(`Peso total: ${totalWeight} lb`);
-        if (totalCubicFeet > 0) measureLines.push(`Volumen total: ${totalCubicFeet} ft³`);
-        return `Hola ${stop.c.name}, aquí el detalle de ${pkgWord}:\n\nPaquetes: ${stop.packages.length}\nTracking: ${trackings}\n${measureLines.join('\n')}\nTotal a pagar: ₡${costCRC} ($${fmtMoney(totalCost)} USD)\n\nGracias por confiar en Logística Flash.`;
+        // One line per package (tracking + su propio peso/volumen) en vez de
+        // un tracking combinado y un total — con más de un paquete, el
+        // cliente necesita saber cuál pesa cuánto, no solo la suma.
+        const pkgLines = stop.packages.map((p, i) => {
+          const measure = p.shippingType === 'maritimo'
+            ? (p.cubicFeet != null ? `${p.cubicFeet} ft³` : '—')
+            : (p.weight != null ? `${p.weight} lb` : '—');
+          return `${i + 1}. Tracking: ${p.tracking} — Peso/Volumen: ${measure}`;
+        });
+        return `Hola ${stop.c.name}, aquí el detalle de ${pkgWord}:\n\n${pkgLines.join('\n')}\n\nTotal a pagar: ₡${costCRC} ($${fmtMoney(totalCost)} USD)\n\nGracias por confiar en Logística Flash.`;
       };
       const invoiceHrefForStop = (stop) => `https://wa.me/${waPhone(stop.c.phone)}?text=${encodeURIComponent(invoiceMessageForStop(stop))}`;
       const invoiceHrefsJson = esc(JSON.stringify(orderedStops.filter((stop) => stop.c.phone && stop.c.phone.trim()).map((stop) => invoiceHrefForStop(stop))));
@@ -1488,6 +1517,12 @@
             <td>$${fmtMoney(p.cost)}</td>
             <td>₡${fmtCRC(p.cost * state.settings.crcRate)}</td>
             <td>${estadoTag}</td>
+            <td>
+              <select class="input" data-action="change-pkg-messenger" data-id="${p.id}" title="Cambiar el mensajero de este paquete" style="font-size:13px">
+                <option value="">Automático (zona)</option>
+                ${state.messengers.map((mm) => `<option value="${esc(mm.id)}" ${p.messengerId === mm.id ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}
+              </select>
+            </td>
             <td style="text-align:right">
               <div style="display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
                 ${actions}
@@ -1515,8 +1550,8 @@
             </div>
           </div>
           <div class="table-scroll">
-            <table class="table" style="margin-top:var(--space-2);min-width:760px">
-              <thead><tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>
+            <table class="table" style="margin-top:var(--space-2);min-width:920px">
+              <thead><tr><th>Cliente</th><th>Dirección</th><th>Teléfono</th><th>Tracking</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th>Mensajero</th><th style="text-align:right">Acciones</th></tr></thead>
               <tbody>${rows}</tbody>
               <tfoot>
                 <tr>
@@ -1665,7 +1700,7 @@
       .filter((p) => p.sent || p.delivered)
       .map((p) => {
         const c = clientById(p.clientId);
-        const mm = c ? messengerForZone(c.province) : null;
+        const mm = c ? effectiveMessenger(p, c) : null;
         return {
           id: p.id,
           tracking: p.tracking,
@@ -1805,7 +1840,7 @@
   function setTab(tab) {
     state.tab = tab;
     state.mobileNavOpen = false; // navigating closes the mobile drawer — no effect on desktop
-    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' }; }
+    if (tab === 'clientes') { state.clientEditingId = null; state.clientDraft = { name: '', phone: '', phone2: '', address: '', addressDetails: '', province: '', canton: '' }; }
     if (tab === 'paquete') { state.pkgEditingId = null; state.pkgSelectedClientId = null; state.pkgDraft = { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' }; }
     if (tab === 'mensajeros') { state.messengerEditingId = null; state.messengerZonesDraft = []; state.messengerDraft = { name: '', phone: '', origin: '' }; state.messengerError = ''; }
     render();
@@ -1814,6 +1849,7 @@
   async function saveClient() {
     const name = document.getElementById('client-name').value;
     const phone = document.getElementById('client-phone').value;
+    const phone2 = document.getElementById('client-phone2').value;
     const address = document.getElementById('client-address').value;
     const addressDetails = document.getElementById('client-address-details').value;
     const province = document.getElementById('client-province').value;
@@ -1821,13 +1857,13 @@
     if (!name.trim() || !phone.trim()) return;
     await withBusy(async () => {
       if (state.clientEditingId) {
-        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.updateClient(state.clientEditingId, { name: name.trim(), phone: phone.trim(), phone2: phone2.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       } else {
-        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
+        await LF.db.createClient({ name: name.trim(), phone: phone.trim(), phone2: phone2.trim(), address: address.trim(), addressDetails: addressDetails.trim(), province, canton });
       }
       await reloadClients();
       state.clientEditingId = null;
-      state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
+      state.clientDraft = { name: '', phone: '', phone2: '', address: '', addressDetails: '', province: '', canton: '' };
       render();
     });
   }
@@ -1884,6 +1920,17 @@
   async function doMarkArrived(id) {
     await withBusy(async () => {
       await LF.db.markArrived(id, todayISO());
+      await reloadPackages();
+      render();
+    });
+  }
+
+  // No confirmation dialog on purpose — this is meant to be a quick, no-
+  // friction correction (wrong zone, mensajero out sick, etc), and it's
+  // trivially reversible by just picking "Automático (zona)" again.
+  async function changePkgMessenger(id, messengerId) {
+    await withBusy(async () => {
+      await LF.db.setPackageMessenger(id, messengerId);
       await reloadPackages();
       render();
     });
@@ -2041,7 +2088,7 @@
     // routed, just invisible until someone thinks to look for them). Worth
     // a specific number here instead of the generic zone warning alone.
     const activeCount = m
-      ? activeRoutePackages().filter((p) => { const c = clientById(p.clientId); return c && c.province && m.zones.includes(c.province); }).length
+      ? activeRoutePackages().filter((p) => { const c = clientById(p.clientId); return c && effectiveMessenger(p, c)?.id === m.id; }).length
       : 0;
     const activeWarning = activeCount > 0
       ? ` Tiene ${activeCount} paquete${activeCount === 1 ? '' : 's'} en ruta activa hoy — seguirán marcados "en ruta", pero dejarán de aparecer en ninguna tarjeta de Lista del día hasta que les asignes otro mensajero a esa zona.`
@@ -2089,14 +2136,14 @@
         const c = clientById(el.dataset.id);
         if (!c) return;
         state.clientEditingId = c.id;
-        state.clientDraft = { name: c.name, phone: c.phone, address: c.address, addressDetails: c.addressDetails || '', province: c.province || '', canton: c.canton || '' };
+        state.clientDraft = { name: c.name, phone: c.phone, phone2: c.phone2 || '', address: c.address, addressDetails: c.addressDetails || '', province: c.province || '', canton: c.canton || '' };
         render();
         scrollToForm('client-form-card');
         return;
       }
       case 'cancel-edit-client':
         state.clientEditingId = null;
-        state.clientDraft = { name: '', phone: '', address: '', addressDetails: '', province: '', canton: '' };
+        state.clientDraft = { name: '', phone: '', phone2: '', address: '', addressDetails: '', province: '', canton: '' };
         render(); return;
       case 'save-client': return void saveClient();
       case 'delete-client': return void deleteClient(el.dataset.id);
@@ -2295,6 +2342,7 @@
     }
     if (id === 'client-name') { state.clientDraft.name = e.target.value; return; }
     if (id === 'client-phone') { state.clientDraft.phone = e.target.value; return; }
+    if (id === 'client-phone2') { state.clientDraft.phone2 = e.target.value; return; }
     if (id === 'client-address') { state.clientDraft.address = e.target.value; return; }
     if (id === 'client-address-details') { state.clientDraft.addressDetails = e.target.value; return; }
     if (id === 'client-canton') { state.clientDraft.canton = e.target.value; return; }
@@ -2322,6 +2370,10 @@
   });
 
   document.body.addEventListener('change', (e) => {
+    if (e.target.dataset.action === 'change-pkg-messenger') {
+      void changePkgMessenger(e.target.dataset.id, e.target.value || null);
+      return;
+    }
     if (e.target.name === 'pkg-estado') {
       state.pkgDraft.arrived = e.target.value === 'bodega';
       render();

@@ -65,12 +65,15 @@ propio — Supabase es el backend.
 
 ## 7. (Opcional) Rutas optimizadas con Google Maps
 
-Por defecto, "Lista del día" ya ordena las paradas de cada mensajero por
-distancia en línea recta desde su punto de salida — gratis, sin configurar
-nada. Este paso es solo si además quieren que el botón "Optimizar ruta con
-Google Maps" use calles reales (Google Routes API) en vez de línea recta.
-Si no lo hacen, el botón simplemente muestra un error y el resto de la app
-sigue funcionando igual — no es necesario para usar Logística Flash.
+Por defecto, "Lista del día" ya ordena las paradas de cada mensajero de más
+cerca a más lejos, en línea recta desde su punto de salida — gratis, sin
+configurar nada. Este paso es solo si además quieren que el botón "Optimizar
+ruta con Google Maps" ordene ese mismo "más cerca a más lejos" pero por
+distancia real de calle (Google Routes API) en vez de línea recta — el
+mensajero sale, entrega en orden hasta la parada más lejana, y de ahí
+regresa sin nada más que entregar. Si no lo hacen, el botón simplemente
+muestra un error y el resto de la app sigue funcionando igual — no es
+necesario para usar Logística Flash.
 
 Necesita 3 cosas que solo ustedes pueden crear (yo no tengo acceso a su
 cuenta de Google ni a su proyecto de Supabase):

@@ -34,6 +34,9 @@ create table if not exists public.clients (
 alter table public.clients add column if not exists address_details text not null default '';
 alter table public.clients add column if not exists province text not null default '';
 alter table public.clients add column if not exists canton text not null default '';
+-- Optional second contact number (e.g. a family member's) — phone stays the
+-- required primary number everything (WhatsApp, etc.) sends to by default.
+alter table public.clients add column if not exists phone2 text not null default '';
 
 -- Their own shorthand code for a client (e.g. "JG-238"), the way Nana already
 -- tags people by hand today. Auto-assigned sequentially now (the app shows
@@ -100,6 +103,13 @@ alter table public.packages add column if not exists delivered_date date;
 -- constraint, matching how the rest of this schema doesn't enforce enums.
 alter table public.packages add column if not exists shipping_type text not null default 'aereo';
 alter table public.packages add column if not exists cubic_feet numeric(8,2);
+
+-- A package normally goes to whichever mensajero covers the client's zone
+-- (computed on the fly, not stored) — this column only exists to override
+-- that for one package when there's a reason to hand it to someone else.
+-- Null means "no override, use the zone's mensajero" (the default for every
+-- existing row).
+alter table public.packages add column if not exists messenger_id uuid references public.messengers(id) on delete set null;
 
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);

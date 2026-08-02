@@ -1,8 +1,18 @@
-// Optimizes the visiting order of a mensajero's stops using Google's Routes
-// API (real streets, not the straight-line fallback js/app.js already uses
-// when this isn't configured or fails). Deployed with Supabase's default JWT
-// verification — only a signed-in app user can call this — so there's no
-// auth code here beyond that.
+// Orders a mensajero's stops from nearest to farthest — by real road
+// distance from their starting point (Google's Routes API), not the
+// straight-line fallback js/app.js already uses when this isn't configured
+// or fails. Deployed with Supabase's default JWT verification — only a
+// signed-in app user can call this — so there's no auth code here beyond
+// that.
+//
+// This is a plain nearest-to-farthest sort *from the origin point*, not a
+// full route optimization: the mensajero starts at their origin, visits
+// stops in that order, and doesn't need to come back through them — the
+// farthest stop is the last one, and whatever's left is just the trip home,
+// not part of the delivery route. That's what was actually asked for, and
+// it's also a much simpler (and cheaper) Google API call than solving "best
+// loop through every stop and back" would be: one Route Matrix request (one
+// origin, N destinations) instead of a waypoint-optimized route.
 //
 // Required secret: GOOGLE_MAPS_API_KEY (a Google Cloud API key with the
 // Routes API enabled). Set it with:
@@ -30,10 +40,12 @@ function json(body: unknown, status = 200) {
 
 type LatLng = { lat: number; lng: number };
 
-// Google's Routes API caps the total origin+destination+intermediates at
-// 25 waypoints. Reject early with a clear message instead of forwarding a
-// too-large request and surfacing Google's raw (much less clear) error.
-const MAX_STOPS = 23;
+// A single origin against up to this many destinations keeps the request
+// (origins × destinations elements) comfortably under Google's 625-element
+// cap for this API — real routes for one mensajero's day are nowhere close
+// to this, so it only exists to fail fast with a clear message instead of
+// forwarding an unreasonably large request.
+const MAX_STOPS = 100;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
@@ -56,32 +68,27 @@ Deno.serve(async (req) => {
     return json({ error: 'Se espera { origin: {lat,lng}, stops: [{lat,lng}, ...] }.' }, 400);
   }
   if (stops.length > MAX_STOPS) {
-    return json({ error: `Esta ruta tiene ${stops.length} paradas — Google Routes API solo optimiza hasta ${MAX_STOPS} a la vez. Dividí la ruta en grupos más pequeños.` }, 400);
+    return json({ error: `Esta ruta tiene ${stops.length} paradas — esta función solo maneja hasta ${MAX_STOPS} a la vez. Dividí la ruta en grupos más pequeños.` }, 400);
   }
 
-  // No fixed final destination for a delivery route — only the order of the
-  // intermediate stops matters, not the return leg — so origin and
-  // destination are the same point. Google only reorders `intermediates`.
-  const routesBody = {
-    origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
-    destination: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
-    intermediates: stops.map((s) => ({ location: { latLng: { latitude: s.lat, longitude: s.lng } } })),
+  const matrixBody = {
+    origins: [{ waypoint: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } } }],
+    destinations: stops.map((s) => ({ waypoint: { location: { latLng: { latitude: s.lat, longitude: s.lng } } } })),
     travelMode: 'DRIVE',
-    optimizeWaypointOrder: true,
   };
 
   let res: Response;
   try {
-    res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    res = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
         // Routes API requires an explicit field mask — the default response
         // is otherwise huge (full turn-by-turn geometry we don't need).
-        'X-Goog-FieldMask': 'routes.optimizedIntermediateWaypointIndex',
+        'X-Goog-FieldMask': 'originIndex,destinationIndex,distanceMeters,condition',
       },
-      body: JSON.stringify(routesBody),
+      body: JSON.stringify(matrixBody),
     });
   } catch (err) {
     return json({ error: 'No se pudo contactar la Routes API de Google: ' + String((err as Error)?.message || err) }, 502);
@@ -92,11 +99,27 @@ Deno.serve(async (req) => {
     return json({ error: `Google Routes API respondió ${res.status}: ${errText}` }, 502);
   }
 
-  const data = await res.json();
-  const order = data?.routes?.[0]?.optimizedIntermediateWaypointIndex;
-  if (!Array.isArray(order)) {
-    return json({ error: 'Google no devolvió un orden optimizado para estos puntos.' }, 502);
+  type MatrixElement = { originIndex?: number; destinationIndex?: number; distanceMeters?: number; condition?: string };
+  let elements: MatrixElement[];
+  try {
+    elements = await res.json();
+  } catch {
+    return json({ error: 'Google no devolvió una respuesta válida para la matriz de distancias.' }, 502);
   }
+  if (!Array.isArray(elements) || elements.length !== stops.length) {
+    return json({ error: 'Respuesta inválida del servicio de rutas.' }, 502);
+  }
+
+  const unreachable = elements.filter((el) => el.condition && el.condition !== 'ROUTE_EXISTS');
+  if (unreachable.length > 0) {
+    return json({ error: `Google no encontró una ruta por calle a ${unreachable.length} de las paradas — revisa esas ubicaciones.` }, 502);
+  }
+
+  // Nearest to farthest from the origin, by real road distance — not the
+  // order Google happened to return the matrix elements in.
+  const order = [...elements]
+    .sort((a, b) => (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0))
+    .map((el) => el.destinationIndex ?? 0);
 
   return json({ order });
 });

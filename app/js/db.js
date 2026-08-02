@@ -36,7 +36,7 @@ window.LF = window.LF || {};
 
   function mapClient(row) {
     return {
-      id: row.id, name: row.name, phone: row.phone, codeSeq: row.code_seq,
+      id: row.id, name: row.name, phone: row.phone, phone2: row.phone2 || '', codeSeq: row.code_seq,
       address: row.address || '', addressDetails: row.address_details || '',
       province: row.province || '', canton: row.canton || '',
     };
@@ -63,6 +63,7 @@ window.LF = window.LF || {};
       assignedDate: row.assigned_date,
       routed: !!row.routed,
       routedDate: row.routed_date,
+      messengerId: row.messenger_id || null,
       delivered: !!row.delivered,
       deliveredDate: row.delivered_date,
       sent: !!row.sent,
@@ -77,17 +78,17 @@ window.LF = window.LF || {};
       return (await selectAll('clients')).map(mapClient);
     },
 
-    async createClient({ name, phone, address, addressDetails, province, canton }) {
+    async createClient({ name, phone, phone2, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .insert({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
+        .insert({ name, phone, phone2: phone2 || '', address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .select().single();
       throwIfError(error);
       return mapClient(data);
     },
 
-    async updateClient(id, { name, phone, address, addressDetails, province, canton }) {
+    async updateClient(id, { name, phone, phone2, address, addressDetails, province, canton }) {
       const { data, error } = await sb().from('clients')
-        .update({ name, phone, address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
+        .update({ name, phone, phone2: phone2 || '', address: address || '', address_details: addressDetails || '', province: province || '', canton: canton || '' })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapClient(data);
@@ -165,6 +166,17 @@ window.LF = window.LF || {};
     async assignToRoute(id, routedDate) {
       const { data, error } = await sb().from('packages')
         .update({ routed: true, routed_date: routedDate })
+        .eq('id', id).select().single();
+      throwIfError(error);
+      return mapPackage(data);
+    },
+
+    // Manual override: hand this package to a specific mensajero instead of
+    // whichever one covers the client's zone. null clears the override (back
+    // to automatic-by-zone).
+    async setPackageMessenger(id, messengerId) {
+      const { data, error } = await sb().from('packages')
+        .update({ messenger_id: messengerId || null })
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
