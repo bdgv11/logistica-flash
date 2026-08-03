@@ -106,7 +106,7 @@
     routeOptimization: {}, // messengerId -> {status: 'loading'|'done'|'error', orderedStops}
     mobileNavOpen: false,
     toast: null, // {type: 'success'|'error', message}
-    historyFilters: { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' },
+    historyFilters: { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '', invoiceNumber: '' },
     historyPage: 1,
     fatalError: null,
     loggingIn: false,
@@ -384,6 +384,16 @@
   function fmtMoney(n) { return Number(n || 0).toFixed(2); }
 
   function fmtCRC(n) { return Math.round(Number(n) || 0).toLocaleString('es-CR'); }
+
+  // "₡" + fmtCRC(-5000) alone would print "₡-5,000" — the minus lands after
+  // the currency symbol, easy to misread as a typo instead of a real loss.
+  // Ganancia real is the one place this app shows a number that's actually
+  // expected to go negative sometimes (selling below what the provider
+  // charged) — worth reading unambiguously when it does.
+  function fmtSignedCRC(n) {
+    const v = Number(n) || 0;
+    return v < 0 ? `-₡${fmtCRC(-v)}` : `₡${fmtCRC(v)}`;
+  }
 
   // Its own modal-style root, like renderConfirm/renderInvoiceParsingModal —
   // driven directly off state.toast instead of the main render() cascade, so
@@ -1220,7 +1230,7 @@
         ${providerTotal > 0 || facturarTotal > 0 ? `
           <span class="tag tag-warn" style="display:inline-flex;gap:5px"><span>Total proveedor:</span><span>₡${fmtCRC(providerTotal)}</span></span>
           <span class="tag tag-neutral" style="display:inline-flex;gap:5px"><span>Total a facturar:</span><span>₡${fmtCRC(facturarTotal)}</span></span>
-          <span class="tag ${gananciaReal >= 0 ? 'tag-accent' : 'tag-warn'}" style="display:inline-flex;gap:5px"><span>Ganancia real:</span><span>₡${fmtCRC(gananciaReal)}</span></span>
+          <span class="tag ${gananciaReal >= 0 ? 'tag-accent' : 'tag-warn'}" style="display:inline-flex;gap:5px"><span>Ganancia real:</span><span>${fmtSignedCRC(gananciaReal)}</span></span>
         ` : ''}
         ${state.pkgListFilters.estado === 'bodega-por-entregar' && readyIds.length > 0 ? `
           <button class="btn btn-primary" type="button" data-action="assign-all-ready" data-ids="${esc(JSON.stringify(readyIds))}">Asignar todos al mensajero (${readyIds.length}) →</button>
@@ -1364,41 +1374,85 @@
   }
 
   async function commitInvoiceReview() {
-    const selected = state.invoiceReviewRows.filter((r) => r.selected && r.status !== 'already-arrived');
-    if (selected.length === 0) { closeInvoiceReview(); return; }
+    const candidates = state.invoiceReviewRows.filter((r) => r.selected && r.status !== 'already-arrived');
+    if (candidates.length === 0) { closeInvoiceReview(); return; }
+
+    // Two lines sharing a tracking (see the warning in renderInvoiceReview)
+    // would otherwise both try to create/update the same package — the
+    // second hits the tracking uniqueness constraint and crashes the batch
+    // partway through, with earlier rows already committed and no clear
+    // sense of what actually went through. Keep the first of each, skip the
+    // rest, same as the modal already told the admin would happen.
+    const seenTracking = new Set();
+    const selected = [];
+    for (const row of candidates) {
+      const key = normalize(row.tracking);
+      if (seenTracking.has(key)) continue;
+      seenTracking.add(key);
+      selected.push(row);
+    }
+
     await withBusy(async () => {
+      let succeeded = 0;
+      const failedTrackings = [];
+      // A handful of bad rows (one weird line) is worth reporting and
+      // moving past — a whole run of failures in a row almost certainly
+      // means something systemic (connection dropped), not the data, and
+      // grinding through the rest one by one would just pile up the same
+      // error uselessly.
+      let consecutiveFailures = 0;
       for (const row of selected) {
-        const isMaritime = row.shippingType === 'maritimo';
-        const measure = isMaritime ? row.cubicFeet : row.weightLb;
-        const rate = isMaritime ? state.settings.pricePerCubicFt : state.settings.ratePerLb;
-        const cost = Math.round(measure * rate * 100) / 100;
-        const payload = {
-          weight: isMaritime ? null : row.weightLb,
-          cubicFeet: isMaritime ? row.cubicFeet : null,
-          shippingType: row.shippingType,
-          cost, arrived: true, assignedDate: todayISO(),
-          invoiceNumber: row.invoiceNumber, providerUnitCost: row.unitCostCRC, providerLineTotal: row.lineTotalCRC,
-        };
-        if (row.status === 'will-arrive') {
-          const existing = state.packages.find((p) => p.id === row.packageId);
-          if (!existing) continue;
-          await LF.db.updatePackage(row.packageId, { ...payload, tracking: existing.tracking, clientId: existing.clientId });
-        } else if (row.status === 'partial-match') {
-          const existing = state.packages.find((p) => p.id === row.packageId);
-          if (!existing) continue;
-          // Replace the short reference Nana originally typed with the full
-          // tracking from the invoice — the next invoice that mentions this
-          // package will then match it exactly instead of needing this
-          // fallback again.
-          await LF.db.updatePackage(row.packageId, { ...payload, tracking: row.tracking, clientId: existing.clientId });
-        } else {
-          await LF.db.createPackage({ ...payload, tracking: row.tracking, clientId: null });
+        try {
+          const isMaritime = row.shippingType === 'maritimo';
+          const measure = isMaritime ? row.cubicFeet : row.weightLb;
+          const rate = isMaritime ? state.settings.pricePerCubicFt : state.settings.ratePerLb;
+          const cost = Math.round(measure * rate * 100) / 100;
+          const payload = {
+            weight: isMaritime ? null : row.weightLb,
+            cubicFeet: isMaritime ? row.cubicFeet : null,
+            shippingType: row.shippingType,
+            cost, arrived: true, assignedDate: todayISO(),
+            invoiceNumber: row.invoiceNumber, providerUnitCost: row.unitCostCRC, providerLineTotal: row.lineTotalCRC,
+          };
+          if (row.status === 'will-arrive') {
+            const existing = state.packages.find((p) => p.id === row.packageId);
+            if (!existing) continue;
+            await LF.db.updatePackage(row.packageId, { ...payload, tracking: existing.tracking, clientId: existing.clientId });
+          } else if (row.status === 'partial-match') {
+            const existing = state.packages.find((p) => p.id === row.packageId);
+            if (!existing) continue;
+            // Replace the short reference Nana originally typed with the full
+            // tracking from the invoice — the next invoice that mentions this
+            // package will then match it exactly instead of needing this
+            // fallback again.
+            await LF.db.updatePackage(row.packageId, { ...payload, tracking: row.tracking, clientId: existing.clientId });
+          } else {
+            await LF.db.createPackage({ ...payload, tracking: row.tracking, clientId: null });
+          }
+          succeeded++;
+          consecutiveFailures = 0;
+        } catch (err) {
+          console.error(err);
+          failedTrackings.push(row.tracking);
+          consecutiveFailures++;
+          if (consecutiveFailures >= 3) {
+            failedTrackings.push(`(se detuvo — varios errores seguidos, probablemente de conexión; lo que falte volvé a subirlo después)`);
+            break;
+          }
         }
       }
       await reloadPackages();
       closeInvoiceReview();
       render();
-    }, `Factura aplicada — ${selected.length} paquete${selected.length === 1 ? '' : 's'}.`);
+      const dupeNote = candidates.length > selected.length
+        ? ` (se omitieron ${candidates.length - selected.length} línea${candidates.length - selected.length === 1 ? '' : 's'} con tracking repetido)`
+        : '';
+      if (failedTrackings.length > 0) {
+        showToast('error', `${succeeded} de ${selected.length} paquetes procesados — fallaron: ${failedTrackings.join(', ')}.${dupeNote}`);
+      } else {
+        showToast('success', `Factura aplicada — ${succeeded} paquete${succeeded === 1 ? '' : 's'}.${dupeNote}`);
+      }
+    });
   }
 
   // 'partial-match' has no dedicated .tag-* class — .tag-accent-2 exists in
@@ -1426,6 +1480,8 @@
           <td><input type="checkbox" data-action="toggle-invoice-row" data-idx="${i}" ${r.selected ? 'checked' : ''} ${r.status === 'already-arrived' ? 'disabled' : ''}></td>
           <td>${trackingCell}</td>
           <td>${esc(measure)}</td>
+          <td>${r.unitCostCRC != null ? '₡' + fmtCRC(r.unitCostCRC) : '<span class="text-muted">—</span>'}</td>
+          <td>${r.lineTotalCRC != null ? '₡' + fmtCRC(r.lineTotalCRC) : '<span class="text-muted">—</span>'}</td>
           <td><span class="tag ${s.cls || ''}" ${s.style ? `style="${s.style}"` : ''}>${s.text}</span></td>
         </tr>`;
     }).join('\n');
@@ -1433,11 +1489,27 @@
     const hasMaritimeRows = state.invoiceReviewRows.some((r) => r.shippingType === 'maritimo');
     const unparsedLines = state.invoiceReviewUnparsedLines;
 
+    // Two lines sharing a tracking (a provider data-entry slip, or a
+    // legitimately-repeated line) would otherwise only surface as a
+    // confusing failure mid-commit — this is the point where it's still
+    // easy to catch and fix (uncheck one, or go verify with the provider)
+    // before it becomes a database error.
+    const dupTrackings = [...state.invoiceReviewRows
+      .filter((r) => r.selected && r.status !== 'already-arrived')
+      .reduce((map, r) => {
+        const key = normalize(r.tracking);
+        map.set(key, (map.get(key) || 0) + 1);
+        return map;
+      }, new Map())]
+      .filter(([, count]) => count > 1)
+      .map(([key]) => key);
+
     invoiceReviewRoot.innerHTML = `
       <div class="dialog-backdrop" style="position:fixed;inset:0;z-index:1000">
         <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="invoice-review-title" style="width:min(720px,100%)">
           <div class="dialog-title" id="invoice-review-title">Revisar factura — ${state.invoiceReviewRows.length} línea(s) encontradas</div>
           ${hasMaritimeRows && !state.settings.pricePerCubicFt ? `<p style="color:#8a5a00;font-size:13px;margin:0 0 var(--space-2)">⚠ El precio por pie cúbico todavía está en 0 (Configuración) — los paquetes marítimos de esta factura se guardarían con costo ₡0.</p>` : ''}
+          ${dupTrackings.length > 0 ? `<p style="color:#8a5a00;font-size:13px;margin:0 0 var(--space-2)">⚠ ${dupTrackings.length} tracking${dupTrackings.length === 1 ? '' : 's'} aparece${dupTrackings.length === 1 ? '' : 'n'} más de una vez marcado${dupTrackings.length === 1 ? '' : 's'} para procesar (${dupTrackings.map(esc).join(', ')}) — solo se va a usar la primera línea de cada uno, la(s) demás se van a omitir.</p>` : ''}
           ${unparsedLines.length > 0 ? `
             <details style="margin:0 0 var(--space-2)">
               <summary style="color:#8a5a00;font-size:13px;cursor:pointer">⚠ ${unparsedLines.length} línea(s) no reconocidas — ver detalle</summary>
@@ -1447,7 +1519,7 @@
             </details>` : ''}
           <div class="table-scroll" style="max-height:50vh;overflow-y:auto">
             <table class="table">
-              <thead><tr><th></th><th>Tracking</th><th>Peso/Volumen</th><th>Estado</th></tr></thead>
+              <thead><tr><th></th><th>Tracking</th><th>Peso/Volumen</th><th>Precio unitario</th><th>Total</th><th>Estado</th></tr></thead>
               <tbody>${rowsHtml}</tbody>
             </table>
           </div>
@@ -1807,6 +1879,7 @@
     const f = state.historyFilters;
     const q = normalize(f.client).trim();
     const qTracking = normalize(f.tracking).trim();
+    const qInvoice = normalize(f.invoiceNumber).trim();
     return state.packages
       .filter((p) => p.sent || p.delivered)
       .map((p) => {
@@ -1821,10 +1894,13 @@
           messengerName: mm ? mm.name : 'Sin mensajero',
           status: p.sent ? 'paid' : 'debe',
           date: p.sentDate || p.deliveredDate || '',
+          invoiceNumber: p.invoiceNumber || null,
+          providerLineTotal: Number(p.providerLineTotal) || 0,
         };
       })
       .filter((r) => !q || normalize(r.clientName).includes(q))
       .filter((r) => !qTracking || normalize(r.tracking).includes(qTracking))
+      .filter((r) => !qInvoice || (r.invoiceNumber && normalize(r.invoiceNumber).includes(qInvoice)))
       .filter((r) => !f.messengerId || r.messengerId === f.messengerId)
       .filter((r) => !f.dateFrom || (r.date && r.date >= f.dateFrom))
       .filter((r) => !f.dateTo || (r.date && r.date <= f.dateTo))
@@ -1848,6 +1924,10 @@
             <div class="field">
               <label>Tracking</label>
               <input class="input" id="history-tracking" type="text" value="${esc(f.tracking)}" placeholder="Buscar por tracking">
+            </div>
+            <div class="field">
+              <label># de factura</label>
+              <input class="input" id="history-invoice" type="text" value="${esc(f.invoiceNumber)}" placeholder="Ej: 10865">
             </div>
             <div class="field">
               <label>Mensajero</label>
@@ -1893,6 +1973,7 @@
       <tr${isDebe ? ' style="background:#fdecc8"' : ''}>
         <td>${esc(h.clientName)}</td>
         <td>${esc(h.tracking)}</td>
+        <td>${h.invoiceNumber ? esc(h.invoiceNumber) : '<span class="text-muted">—</span>'}</td>
         <td>${esc(h.messengerName)}</td>
         <td>$${fmtMoney(h.cost)}</td>
         <td>₡${fmtCRC(h.cost * state.settings.crcRate)}</td>
@@ -1906,16 +1987,32 @@
       </tr>`;
     }).join('\n');
 
+    // Same idea as Registrar paquete's totals: reflect whatever's currently
+    // filtered — with a factura's consecutivo filtered in, this is that
+    // invoice's real profitability (already delivered/paid, unlike
+    // Registrar paquete where most rows are still pending); with no filter,
+    // it's every delivery in view.
+    const providerTotal = rows.reduce((sum, h) => sum + h.providerLineTotal, 0);
+    const facturarTotal = rows.reduce((sum, h) => sum + h.cost * state.settings.crcRate, 0);
+    const gananciaReal = facturarTotal - providerTotal;
+
     container.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:var(--space-3)">
-        <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${rows.length}</span><span>entregas</span></span>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${rows.length}</span><span>entregas</span></span>
+          ${providerTotal > 0 || facturarTotal > 0 ? `
+            <span class="tag tag-warn" style="display:inline-flex;gap:5px"><span>Total proveedor:</span><span>₡${fmtCRC(providerTotal)}</span></span>
+            <span class="tag tag-neutral" style="display:inline-flex;gap:5px"><span>Total a facturar:</span><span>₡${fmtCRC(facturarTotal)}</span></span>
+            <span class="tag ${gananciaReal >= 0 ? 'tag-accent' : 'tag-warn'}" style="display:inline-flex;gap:5px"><span>Ganancia real:</span><span>${fmtSignedCRC(gananciaReal)}</span></span>
+          ` : ''}
+        </div>
         <button class="btn btn-secondary" type="button" data-action="export-history-csv" style="gap:8px" ${rows.length === 0 ? 'disabled' : ''}>
           ${ICONS.download}<span>Exportar a Excel</span>
         </button>
       </div>
       <div class="table-scroll">
-        <table class="table" style="min-width:700px">
-          <thead><tr><th>Cliente</th><th>Tracking</th><th>Mensajero</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th>Fecha</th></tr></thead>
+        <table class="table" style="min-width:820px">
+          <thead><tr><th>Cliente</th><th>Tracking</th><th>Factura #</th><th>Mensajero</th><th>Costo ($)</th><th>Costo (₡)</th><th>Estado</th><th>Fecha</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
@@ -1930,10 +2027,10 @@
 
   function exportHistoryCSV() {
     const rows = getHistoryRows();
-    const header = ['Cliente', 'Tracking', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Estado', 'Fecha'];
+    const header = ['Cliente', 'Tracking', 'Factura #', 'Mensajero', 'Costo ($)', 'Costo (₡)', 'Costo proveedor (₡)', 'Estado', 'Fecha'];
     const lines = [header.join(',')].concat(rows.map((h) => [
-      h.clientName, h.tracking, h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate),
-      h.status === 'debe' ? 'Debe' : 'Pagado', fmtDateCR(h.date),
+      h.clientName, h.tracking, h.invoiceNumber || '', h.messengerName, fmtMoney(h.cost), Math.round(h.cost * state.settings.crcRate),
+      h.providerLineTotal || '', h.status === 'debe' ? 'Debe' : 'Pagado', fmtDateCR(h.date),
     ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')));
     const csv = '\uFEFF' + lines.join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -2339,7 +2436,7 @@
       case 'mark-paid': return void markPaid(el.dataset.id);
 
       case 'clear-history-filters':
-        state.historyFilters = { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '' };
+        state.historyFilters = { client: '', tracking: '', messengerId: '', dateFrom: '', dateTo: '', minAmount: '', invoiceNumber: '' };
         state.historyPage = 1;
         render();
         return;
@@ -2485,6 +2582,12 @@
     }
     if (id === 'history-tracking') {
       state.historyFilters.tracking = e.target.value;
+      state.historyPage = 1;
+      renderHistoryList();
+      return;
+    }
+    if (id === 'history-invoice') {
+      state.historyFilters.invoiceNumber = e.target.value;
       state.historyPage = 1;
       renderHistoryList();
       return;
