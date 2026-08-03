@@ -135,17 +135,17 @@ window.LF = window.LF || {};
       const tracking = m[1].trim();
       const cubicFeet = parseFloat(m[2].replace(',', '.'));
       if (!tracking || !Number.isFinite(cubicFeet)) return null;
-      return { tracking, shippingType: 'maritimo', weightLb: null, cubicFeet, unitCostCRC: parseCRCAmount(m[3]) };
+      return { tracking, shippingType: 'maritimo', weightLb: null, cubicFeet, unitCostCRC: parseCRCAmount(m[3]), lineTotalCRC: parseCRCAmount(m[4]) };
     }
     const m = ROW_RE.exec(line);
     if (!m) return null;
     const tracking = m[1].trim();
     const weightLb = parseFloat(m[2].replace(',', '.'));
     if (!tracking || !Number.isFinite(weightLb)) return null;
-    return { tracking, shippingType: 'aereo', weightLb, cubicFeet: null, unitCostCRC: parseCRCAmount(m[3]) };
+    return { tracking, shippingType: 'aereo', weightLb, cubicFeet: null, unitCostCRC: parseCRCAmount(m[3]), lineTotalCRC: parseCRCAmount(m[4]) };
   }
 
-  // Returns { rows: [{tracking, shippingType, weightLb, cubicFeet, unitCostCRC}],
+  // Returns { rows: [{tracking, shippingType, weightLb, cubicFeet, unitCostCRC, lineTotalCRC}],
   // unparsedLines: string[] } — unparsedLines surfaces any line inside a
   // recognized section that didn't match its row pattern, so a row that
   // failed to parse shows up as a visible warning instead of silently

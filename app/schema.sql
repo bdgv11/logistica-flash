@@ -115,10 +115,13 @@ alter table public.packages add column if not exists messenger_id uuid reference
 -- (see the invoice-review flow in js/app.js) — a manually-registered
 -- package has neither until a later invoice upload matches it by tracking.
 -- provider_unit_cost is what the casillero/provider charges per lb/ft³ (the
--- invoice's own "P. Unit." column) — a separate thing from `cost`, which is
--- what this app charges the client.
+-- invoice's own "P. Unit." column); provider_line_total is that row's own
+-- "TOTAL" column (unit cost × lb/ft³, as printed — not recomputed, in case
+-- of rounding or extra charges the invoice applied). Both are a separate
+-- thing from `cost`, which is what this app charges the client.
 alter table public.packages add column if not exists invoice_number text;
 alter table public.packages add column if not exists provider_unit_cost numeric(10,2);
+alter table public.packages add column if not exists provider_line_total numeric(10,2);
 
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);

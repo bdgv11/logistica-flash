@@ -87,7 +87,7 @@
     pkgEditingId: null,
     pkgSelectedClientId: null,
     pkgDraft: { tracking: '', weight: '', cubicFeet: '', cost: '', arrived: false, shippingType: 'aereo' },
-    pkgListFilters: { query: '', estado: '' },
+    pkgListFilters: { query: '', estado: '', invoiceNumber: '' },
     pkgListPage: 1,
     session: null,
     loading: true,
@@ -984,6 +984,7 @@
   function getPkgListRows() {
     const f = state.pkgListFilters;
     const q = normalize(f.query).trim();
+    const invoiceQ = normalize(f.invoiceNumber).trim();
     return pendingPackages()
       .map((p) => {
         const c = p.clientId ? clientById(p.clientId) : null;
@@ -993,6 +994,7 @@
         return { p, c, estado };
       })
       .filter(({ p, c }) => !q || normalize(p.tracking).includes(q) || (p.invoiceNumber && normalize(p.invoiceNumber).includes(q)) || (c && (normalize(c.name).includes(q) || normalize(formatClientCode(c.codeSeq)).includes(q))))
+      .filter(({ p }) => !invoiceQ || (p.invoiceNumber && normalize(p.invoiceNumber).includes(invoiceQ)))
       .filter(({ estado }) => !f.estado || f.estado === estado)
       // Oldest first — this is a work queue, not a feed; the one waiting
       // longest should be first in line, not buried once newer ones pile up.
@@ -1123,6 +1125,10 @@
               <input class="input" id="pkg-list-search" type="text" value="${esc(f.query)}" placeholder="Ej: JG-238, María, TBA912..., 10865">
             </div>
             <div class="field">
+              <label>Filtrar únicamente por # de factura</label>
+              <input class="input" id="pkg-list-invoice" type="text" value="${esc(f.invoiceNumber)}" placeholder="Ej: 10865">
+            </div>
+            <div class="field">
               <label>Estado</label>
               <select class="input" id="pkg-list-estado">
                 <option value="">Todos</option>
@@ -1173,13 +1179,13 @@
         <tr>
           <td>${esc(fmtDateCR(localDateFromISO(p.createdAt)) || '—')}</td>
           <td>${esc(p.tracking)}</td>
+          <td>${p.invoiceNumber ? esc(p.invoiceNumber) : '<span class="text-muted">—</span>'}</td>
           <td>${clienteCell}</td>
           <td>${p.shippingType === 'maritimo'
             ? (p.cubicFeet != null ? p.cubicFeet + ' ft³' : '<span class="text-muted">—</span>')
             : (p.weight != null ? p.weight + ' lb' : '<span class="text-muted">—</span>')}</td>
           <td>${p.cost != null ? '$' + fmtMoney(p.cost) : '<span class="text-muted">—</span>'}</td>
           <td>${p.cost != null ? '₡' + fmtCRC(p.cost * state.settings.crcRate) : '<span class="text-muted">—</span>'}</td>
-          <td>${p.invoiceNumber ? esc(p.invoiceNumber) : '<span class="text-muted">—</span>'}</td>
           <td>${p.providerUnitCost != null ? '₡' + fmtCRC(p.providerUnitCost) : '<span class="text-muted">—</span>'}</td>
           <td><span class="tag tag-neutral">${esc(estadoLabel)}</span></td>
           <td style="text-align:right;white-space:nowrap">
@@ -1194,19 +1200,28 @@
     const readyIds = rows.filter(({ p }) => isReadyToRoute(p)).map(({ p }) => p.id);
     const aereoCount = rows.filter(({ p }) => p.shippingType === 'aereo').length;
     const maritimoCount = rows.filter(({ p }) => p.shippingType === 'maritimo').length;
-    // Sum of the *provider's* unit cost across whatever's currently
-    // filtered — filtering by a factura's consecutivo turns this into "what
-    // this invoice's batch actually cost us", but it's not special-cased to
-    // that filter: it reflects whatever rows/filters are on screen. Only
-    // rows a factura upload has actually matched contribute (manually
-    // registered packages have no providerUnitCost yet).
-    const providerTotal = rows.reduce((sum, { p }) => sum + (Number(p.providerUnitCost) || 0), 0);
+    // All three totals reflect whatever's currently filtered — filtering by
+    // a factura's consecutivo turns this into "what this invoice's batch
+    // actually cost us vs. what we're charging for it", but nothing here is
+    // special-cased to that filter; with no filter at all it's just every
+    // pending package. Only rows a factura upload has actually matched
+    // contribute to "proveedor" (manually registered packages have none of
+    // that yet) — "a facturar" comes from `cost` instead, which every
+    // package with a weight/volume and rate already has regardless of any
+    // invoice match.
+    const providerTotal = rows.reduce((sum, { p }) => sum + (Number(p.providerLineTotal) || 0), 0);
+    const facturarTotal = rows.reduce((sum, { p }) => sum + (Number(p.cost) || 0) * state.settings.crcRate, 0);
+    const gananciaReal = facturarTotal - providerTotal;
     container.innerHTML = `
       <div style="margin-bottom:var(--space-2);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span class="tag tag-accent" style="display:inline-flex;gap:5px"><span>${rows.length}</span><span>pendientes</span></span>
         <span class="tag tag-neutral" style="display:inline-flex;gap:5px"><span>${aereoCount}</span><span>aéreo</span></span>
         <span class="tag tag-neutral" style="display:inline-flex;gap:5px"><span>${maritimoCount}</span><span>marítimo</span></span>
-        ${providerTotal > 0 ? `<span class="tag tag-warn" style="display:inline-flex;gap:5px"><span>Total proveedor:</span><span>₡${fmtCRC(providerTotal)}</span></span>` : ''}
+        ${providerTotal > 0 || facturarTotal > 0 ? `
+          <span class="tag tag-warn" style="display:inline-flex;gap:5px"><span>Total proveedor:</span><span>₡${fmtCRC(providerTotal)}</span></span>
+          <span class="tag tag-neutral" style="display:inline-flex;gap:5px"><span>Total a facturar:</span><span>₡${fmtCRC(facturarTotal)}</span></span>
+          <span class="tag ${gananciaReal >= 0 ? 'tag-accent' : 'tag-warn'}" style="display:inline-flex;gap:5px"><span>Ganancia real:</span><span>₡${fmtCRC(gananciaReal)}</span></span>
+        ` : ''}
         ${state.pkgListFilters.estado === 'bodega-por-entregar' && readyIds.length > 0 ? `
           <button class="btn btn-primary" type="button" data-action="assign-all-ready" data-ids="${esc(JSON.stringify(readyIds))}">Asignar todos al mensajero (${readyIds.length}) →</button>
         ` : ''}
@@ -1216,11 +1231,11 @@
           <thead><tr>
             <th style="width:100px">Fecha</th>
             <th style="width:190px">Tracking</th>
+            <th style="width:110px">Factura #</th>
             <th style="width:240px">Cliente</th>
             <th style="width:120px">Peso/Volumen</th>
             <th style="width:100px">Costo ($)</th>
             <th style="width:120px">Costo (₡)</th>
-            <th style="width:110px">Factura #</th>
             <th style="width:150px">Costo proveedor (₡)</th>
             <th style="width:190px">Estado</th>
             <th style="width:260px;text-align:right">Acciones</th>
@@ -1242,8 +1257,8 @@
   // server, no AI, no cost) and, after a review step the admin can adjust,
   // bulk-applies "marcar como llegado + peso" instead of doing it one
   // tracking at a time.
-  function classifyInvoiceRow({ tracking, shippingType, weightLb, cubicFeet, unitCostCRC, invoiceNumber }) {
-    const base = { tracking, shippingType, weightLb, cubicFeet, unitCostCRC, invoiceNumber };
+  function classifyInvoiceRow({ tracking, shippingType, weightLb, cubicFeet, unitCostCRC, lineTotalCRC, invoiceNumber }) {
+    const base = { tracking, shippingType, weightLb, cubicFeet, unitCostCRC, lineTotalCRC, invoiceNumber };
     const exact = state.packages.find((p) => normalize(p.tracking) === normalize(tracking));
     if (exact) {
       if (exact.arrived) return { ...base, status: 'already-arrived', packageId: exact.id, selected: false };
@@ -1290,14 +1305,15 @@
     if (bar) bar.style.width = Math.round(state.invoiceParsingProgress * 100) + '%';
   }
 
-  // The invoice's own consecutivo (e.g. "10865") isn't printed anywhere in
-  // the PDF's text — checked against a real sample, it's just not there —
-  // only in how the casillero's own system names the file it hands out
-  // ("FacturaCasillero_10865_260726_090847.pdf"). Read from the filename
-  // instead; returns null (no consecutivo attached, same as today) for a
-  // PDF that isn't named that way rather than guessing wrong.
+  // The invoice's own consecutivo isn't printed anywhere in the PDF's text —
+  // checked against a real sample, it's just not there — only in how the
+  // casillero's own system names the file it hands out: the LAST 6 digits
+  // before ".pdf" ("FacturaCasillero_11039_260729_082821.pdf" → "082821",
+  // confirmed against a real example). Returns null (no consecutivo
+  // attached, same as today) for a name that doesn't end that way, rather
+  // than guessing wrong.
   function extractInvoiceNumber(filename) {
-    const m = /^factura[a-z]*_(\d+)/i.exec(filename || '');
+    const m = /(\d{6})(?:\.\w+)?$/.exec((filename || '').trim());
     return m ? m[1] : null;
   }
 
@@ -1361,7 +1377,7 @@
           cubicFeet: isMaritime ? row.cubicFeet : null,
           shippingType: row.shippingType,
           cost, arrived: true, assignedDate: todayISO(),
-          invoiceNumber: row.invoiceNumber, providerUnitCost: row.unitCostCRC,
+          invoiceNumber: row.invoiceNumber, providerUnitCost: row.unitCostCRC, providerLineTotal: row.lineTotalCRC,
         };
         if (row.status === 'will-arrive') {
           const existing = state.packages.find((p) => p.id === row.packageId);
@@ -2305,7 +2321,7 @@
         renderPkgList(); return;
       }
       case 'pkg-list-clear':
-        state.pkgListFilters = { query: '', estado: '' };
+        state.pkgListFilters = { query: '', estado: '', invoiceNumber: '' };
         state.pkgListPage = 1;
         render();
         return;
@@ -2437,6 +2453,12 @@
     }
     if (id === 'pkg-list-search') {
       state.pkgListFilters.query = e.target.value;
+      state.pkgListPage = 1;
+      renderPkgList();
+      return;
+    }
+    if (id === 'pkg-list-invoice') {
+      state.pkgListFilters.invoiceNumber = e.target.value;
       state.pkgListPage = 1;
       renderPkgList();
       return;
