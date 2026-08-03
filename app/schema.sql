@@ -111,6 +111,15 @@ alter table public.packages add column if not exists cubic_feet numeric(8,2);
 -- existing row).
 alter table public.packages add column if not exists messenger_id uuid references public.messengers(id) on delete set null;
 
+-- Filled in only when a package gets matched against an uploaded factura
+-- (see the invoice-review flow in js/app.js) — a manually-registered
+-- package has neither until a later invoice upload matches it by tracking.
+-- provider_unit_cost is what the casillero/provider charges per lb/ft³ (the
+-- invoice's own "P. Unit." column) — a separate thing from `cost`, which is
+-- what this app charges the client.
+alter table public.packages add column if not exists invoice_number text;
+alter table public.packages add column if not exists provider_unit_cost numeric(10,2);
+
 create index if not exists packages_client_id_idx on public.packages (client_id);
 create index if not exists packages_assigned_date_idx on public.packages (assigned_date);
 

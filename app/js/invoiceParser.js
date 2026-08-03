@@ -59,28 +59,32 @@ window.LF = window.LF || {};
     return libPromise;
   }
 
-  // A real Aéreo row ends in "<peso> lb ... ₡<precio> ₡<precio>" — anchoring
-  // on that tail (greedy, so it backtracks from the END of the line) is far
-  // more robust than trying to bucket text by column x-position, because the
-  // DESCRIPCIÓN column is always blank there (columns visually collapse) and
-  // the TRACKING column can itself contain spaces — some real rows are free
-  // text like "sobre blanco juan rivera" (an envelope with no formal
-  // tracking, hand-labeled with just the recipient's name) instead of a
-  // tracking code. A lazy capture would stop at the first place it *could*
-  // match instead of the real columns; greedy always lands on the actual
-  // last occurrence.
-  const ROW_RE = /^(.+?)\s+(\d+(?:[.,]\d+)?)\s*lb\b.*?₡\s*[\d.,]+\s*₡\s*[\d.,]+\s*$/i;
-  // Marítimo rows end in "<pies> ft³ ... ₡ ... ₡" instead, and — unlike
-  // Aéreo — DESCRIPCIÓN is often non-empty ("33 LIBRAS", "hazmat"), sitting
-  // between tracking and the ft³ figure. Every real tracking seen in this
-  // section so far is a single token with no spaces, so it's captured as the
-  // first whitespace-delimited chunk (\S+) and whatever text follows before
-  // the ft³ figure is discarded — informational only, not billed on (the
-  // app's own price-per-ft³ setting is what's charged, not the invoice's).
-  // No trailing \b after "ft³": "³" isn't a \w character in JS regex, so
-  // there's no word boundary between it and the space that follows — \b
-  // there would never match at all.
-  const MARITIME_ROW_RE = /^(\S+)\s+.*?(\d+(?:[.,]\d+)?)\s*ft³.*?₡\s*[\d.,]+\s*₡\s*[\d.,]+\s*$/i;
+  // A real Aéreo row ends in "<peso> lb ... ₡<precio unitario> ₡<total>" —
+  // anchoring on that tail (greedy, so it backtracks from the END of the
+  // line) is far more robust than trying to bucket text by column
+  // x-position, because the DESCRIPCIÓN column is always blank there
+  // (columns visually collapse) and the TRACKING column can itself contain
+  // spaces — some real rows are free text like "sobre blanco juan rivera"
+  // (an envelope with no formal tracking, hand-labeled with just the
+  // recipient's name) instead of a tracking code. A lazy capture would stop
+  // at the first place it *could* match instead of the real columns; greedy
+  // always lands on the actual last occurrence. Both trailing ₡ figures are
+  // captured now (P. UNIT. then TOTAL, in that column order) — the first is
+  // what the provider charges per lb/ft³, i.e. their own cost, as opposed to
+  // whatever this app charges the client.
+  const ROW_RE = /^(.+?)\s+(\d+(?:[.,]\d+)?)\s*lb\b.*?₡\s*([\d.,]+)\s*₡\s*([\d.,]+)\s*$/i;
+  // Marítimo rows end in "<pies> ft³ ... ₡<precio unitario> ₡<total>"
+  // instead, and — unlike Aéreo — DESCRIPCIÓN is often non-empty ("33
+  // LIBRAS", "hazmat"), sitting between tracking and the ft³ figure. Every
+  // real tracking seen in this section so far is a single token with no
+  // spaces, so it's captured as the first whitespace-delimited chunk (\S+)
+  // and whatever text follows before the ft³ figure is discarded —
+  // informational only, not billed on (the app's own price-per-ft³ setting
+  // is what's charged to the client, not the invoice's). No trailing \b
+  // after "ft³": "³" isn't a \w character in JS regex, so there's no word
+  // boundary between it and the space that follows — \b there would never
+  // match at all.
+  const MARITIME_ROW_RE = /^(\S+)\s+.*?(\d+(?:[.,]\d+)?)\s*ft³.*?₡\s*([\d.,]+)\s*₡\s*([\d.,]+)\s*$/i;
   // Only fires *within* a recognized Aéreo/Marítimo section (see parsePdf) —
   // catches the column header repeating on every page and page-number
   // footers ("Pág. 2 / 5") that can land mid-section on a page break.
@@ -115,6 +119,15 @@ window.LF = window.LF || {};
     );
   }
 
+  // Money on this invoice is printed "5,640.00" — comma as thousands
+  // separator, dot as decimal — the opposite convention from the weight/
+  // cubic-feet figures elsewhere in these rows, which use a comma as the
+  // decimal separator. The two can't share one parsing function.
+  function parseCRCAmount(str) {
+    const n = parseFloat(String(str).replace(/,/g, ''));
+    return Number.isFinite(n) ? n : null;
+  }
+
   function parseLine(line, section) {
     if (section === 'maritimo') {
       const m = MARITIME_ROW_RE.exec(line);
@@ -122,17 +135,17 @@ window.LF = window.LF || {};
       const tracking = m[1].trim();
       const cubicFeet = parseFloat(m[2].replace(',', '.'));
       if (!tracking || !Number.isFinite(cubicFeet)) return null;
-      return { tracking, shippingType: 'maritimo', weightLb: null, cubicFeet };
+      return { tracking, shippingType: 'maritimo', weightLb: null, cubicFeet, unitCostCRC: parseCRCAmount(m[3]) };
     }
     const m = ROW_RE.exec(line);
     if (!m) return null;
     const tracking = m[1].trim();
     const weightLb = parseFloat(m[2].replace(',', '.'));
     if (!tracking || !Number.isFinite(weightLb)) return null;
-    return { tracking, shippingType: 'aereo', weightLb, cubicFeet: null };
+    return { tracking, shippingType: 'aereo', weightLb, cubicFeet: null, unitCostCRC: parseCRCAmount(m[3]) };
   }
 
-  // Returns { rows: [{tracking, shippingType, weightLb, cubicFeet}],
+  // Returns { rows: [{tracking, shippingType, weightLb, cubicFeet, unitCostCRC}],
   // unparsedLines: string[] } — unparsedLines surfaces any line inside a
   // recognized section that didn't match its row pattern, so a row that
   // failed to parse shows up as a visible warning instead of silently

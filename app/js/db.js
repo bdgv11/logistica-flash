@@ -68,6 +68,8 @@ window.LF = window.LF || {};
       deliveredDate: row.delivered_date,
       sent: !!row.sent,
       sentDate: row.sent_date,
+      invoiceNumber: row.invoice_number || null,
+      providerUnitCost: row.provider_unit_cost == null ? null : Number(row.provider_unit_cost),
       createdAt: row.created_at,
     };
   }
@@ -130,23 +132,31 @@ window.LF = window.LF || {};
       return (await selectAll('packages')).map(mapPackage);
     },
 
-    async createPackage({ tracking, weight, cubicFeet, shippingType, cost, clientId, arrived, assignedDate }) {
+    async createPackage({ tracking, weight, cubicFeet, shippingType, cost, clientId, arrived, assignedDate, invoiceNumber, providerUnitCost }) {
       const { data, error } = await sb().from('packages')
         .insert({
           tracking, weight, cubic_feet: cubicFeet, shipping_type: shippingType || 'aereo', cost,
           client_id: clientId, arrived: !!arrived, assigned_date: arrived ? assignedDate : null,
+          invoice_number: invoiceNumber || null, provider_unit_cost: providerUnitCost ?? null,
         })
         .select().single();
       throwIfError(error);
       return mapPackage(data);
     },
 
-    async updatePackage(id, { tracking, weight, cubicFeet, shippingType, cost, clientId, arrived, assignedDate }) {
+    // invoiceNumber/providerUnitCost are only touched when explicitly passed
+    // (undefined = leave alone) — editing a package's weight/cost through
+    // the normal "Registrar paquete" form never mentions either, and must
+    // not silently wipe out an invoice match a factura upload set earlier.
+    async updatePackage(id, { tracking, weight, cubicFeet, shippingType, cost, clientId, arrived, assignedDate, invoiceNumber, providerUnitCost }) {
+      const patch = {
+        tracking, weight, cubic_feet: cubicFeet, shipping_type: shippingType || 'aereo', cost,
+        client_id: clientId, arrived: !!arrived, assigned_date: arrived ? assignedDate : null,
+      };
+      if (invoiceNumber !== undefined) patch.invoice_number = invoiceNumber || null;
+      if (providerUnitCost !== undefined) patch.provider_unit_cost = providerUnitCost ?? null;
       const { data, error } = await sb().from('packages')
-        .update({
-          tracking, weight, cubic_feet: cubicFeet, shipping_type: shippingType || 'aereo', cost,
-          client_id: clientId, arrived: !!arrived, assigned_date: arrived ? assignedDate : null,
-        })
+        .update(patch)
         .eq('id', id).select().single();
       throwIfError(error);
       return mapPackage(data);
